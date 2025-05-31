@@ -155,3 +155,128 @@ def plot_graphs(
 
     plt.tight_layout()
     plt.show()
+
+
+def plot_pos(
+        t, Z, p,
+        m1_colour: str = "tab:green",
+        m2_colour: str = "tab:red",
+        link1_colour: str = "black",
+        link2_colour: str = "black",
+        m1_markersize: float = 150,
+        m2_markersize: float = 150,
+        line_width: float = 0.65,
+        figure_size: tuple = (8, 7),
+        grid_alpha: float = 0.1,
+        n_max_ticks: int = 4,
+        origin: tuple = (0, 0),
+        x_axis_limits: tuple = None,
+        y_axis_limits: tuple = None,
+        max_axis_extent: float = 1.1,
+        show_legend: bool = False,
+        draw_start: bool = False,
+        draw_end: bool = False,
+        show_trail: bool = False,
+        trail_length_pct: float = 5,
+        n_frames: int = 100
+    ) -> None:
+
+    r1, r2, m1, m2, g, *_ = p
+    theta1, theta2, w1, w2 = Z[0], Z[1], Z[2], Z[3]
+    trail_length = int((trail_length_pct / 100) * len(t))
+
+    # array of coordinates of masses (bobs):
+    x0, y0 = origin
+    x1 = r1 * np.sin(theta1) + x0
+    x2 = x1 + r2 * np.sin(theta2)
+    y1 = - r1 * np.cos(theta1) + y0
+    y2 = y1 - r2 * np.cos(theta2)
+
+    # ----- FIGURE ----- #
+    fig, ax = plt.subplots(figsize=figure_size)
+    ax.xaxis.set_major_locator(MaxNLocator(n_max_ticks))
+    ax.yaxis.set_major_locator(MaxNLocator(n_max_ticks))
+    ax.set_xlabel(r"$x$ ($m$)")
+    ax.set_ylabel(r"$y$ ($m$)")
+    ax.set_aspect("equal")
+    # grids and dashed lines
+    ax.grid(True, alpha=grid_alpha)
+    dashed_alpha, dashed_linewidth = 0.1, 1
+    hline = ax.axhline(0, linestyle="--", color="black", alpha=dashed_alpha, linewidth=dashed_linewidth)
+    vline = ax.axvline(0, linestyle="--", color="black", alpha=dashed_alpha, linewidth=dashed_linewidth)
+    hline.set_dashes([10, 10]), vline.set_dashes([10, 10])
+
+    # ----- DRAW DOUBLE PENDULUM ----- #
+
+    def draw_dp(ax, i: int, show_trail=False, alpha=1.0):
+        """Draws the double pendulum at step index `i` with adjustable transparency."""
+        i = len(t) - 1 if i == -1 else i  # last index if i = -1 is passed
+        ax.plot([x0, x1[i]], [y0, y1[i]], color=link1_colour, linewidth=line_width, alpha=alpha, zorder=1)          # link 1
+        ax.plot([x1[i], x2[i]], [y1[i], y2[i]], color=link2_colour, linewidth=line_width, alpha=alpha, zorder=2)    # link 2
+        ax.scatter(x0, y0, marker="o", color="black", s=12, alpha=alpha, zorder=1)                                  # origin pivot
+        ax.scatter(x1[i], y1[i], marker="o", color=m1_colour, s=m1_markersize, edgecolors="none", alpha=alpha, zorder=3)               # mass 1
+        ax.scatter(x2[i], y2[i], marker="o", color=m2_colour, s=m2_markersize, edgecolors="none", alpha=alpha, zorder=3)               # mass 2
+        if show_trail:
+            i0 = max(0, i - trail_length)
+            ax.plot(x1[i0:i + 1], y1[i0:i + 1], color=m1_colour, linewidth=0.5, alpha=alpha, zorder=0)
+            ax.plot(x2[i0:i + 1], y2[i0:i + 1], color=m2_colour, linewidth=0.5, alpha=alpha, zorder=0)
+
+    if draw_start:
+        draw_dp(ax, i=0, alpha=0.2)
+    if draw_end:
+        draw_dp(ax, i=-1, show_trail=show_trail)
+
+    if not (draw_start or draw_end):
+        step = max(1, len(t) // n_frames)
+        indices = list(range(0, len(t), step))
+        n = len(indices)
+
+        for idx, i in enumerate(indices):
+            # opacity fades from 0.1 to 1.0 linearly across frames
+            alpha = 0.1 + 0.9 * (idx / (n - 1)) if n > 1 else 1.0
+            show_trail_this_frame = (i == indices[-1]) and show_trail
+            draw_dp(ax, i=i, alpha=alpha, show_trail=show_trail_this_frame)
+    
+
+    # --- AXIS LIMITS & LEGEND --- #
+    # independent overrides (if only one set of limits is provided):
+    if x_axis_limits:
+        ax.set_xlim(x_axis_limits)
+    else:
+        x_extent = max_axis_extent * np.max(np.abs(x2))
+        ax.set_xlim(-x_extent, x_extent)
+    if y_axis_limits:
+        ax.set_ylim(y_axis_limits)
+    else:
+        y_extent = max_axis_extent * np.max(np.abs(y2))
+        ax.set_ylim(-y_extent, y_extent)
+    if show_legend:
+        ax.legend(loc="best")
+    plt.show()
+
+
+if __name__ == "__main__":
+
+    # ----- EXAMPLE USAGE ----- #
+    
+    t, Z, p = dp_sim(
+        r1=0.5,
+        r2=0.5,
+        m1=0.5,
+        m2=0.25,
+        theta1_0=35,
+        theta2_0=65
+    )
+
+    plot_graphs(t, Z, p)
+
+    square_limits = 1.2
+    plot_pos(
+        t, Z, p,
+        x_axis_limits=(-square_limits, square_limits),
+        y_axis_limits=(-square_limits, 0.5),
+        # draw_start=True,
+        # draw_end=True
+        n_frames=5,
+        # show_trail=True
+    )
