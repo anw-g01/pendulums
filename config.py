@@ -6,10 +6,10 @@ from typing import Tuple, Optional
 class DPSystemParams:
     """Physical parameters for the Double Pendulum (DP) system."""
     g: float = 9.81
-    m1: float = 0.3
-    m2: float = 0.3
-    r1: float = 0.5
-    r2: float = 0.5
+    m1: float = 0.2
+    m2: float = 0.2
+    r1: float = 0.4
+    r2: float = 0.4
     theta1_0: float = 0
     theta2_0: float = 0
     w1_0: float = 0
@@ -27,7 +27,7 @@ class DPConfig:
     # figure, axes, and grids:
     figure_size: Tuple[int, int] = (10, 10)
     figure_title: str = "Double Pendulum Simulation"
-    grid_alpha: float = 0.1
+    grid_alpha: float = 0.2
     n_max_ticks: int = 5
     origin: Tuple[float, float] = (0, 0)
     x_axis_limits: Optional[Tuple[float, float]] = (None, None)

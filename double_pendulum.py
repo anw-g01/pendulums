@@ -3,161 +3,122 @@ from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation, FFMpegWriter
-plt.rcParams["font.size"] = 8
-plt.rcParams["font.family"] = "monospace"
-plt.rcParams["lines.linewidth"] = 0.8
-from tqdm_pbar import tqdmFA
 import datetime
+from tqdm_pbar import tqdmFA
+from config import DPSystemParams, DPConfig
+from typing import Tuple, Optional
+from ode_systems import dp_ode
+# configure matplotlib defaults
+plt.rcParams.update({
+    "font.size": 8,
+    "font.family": "monospace",
+    "lines.linewidth": 0.8
+})
 
 
-def dp_sim(
-        r1: float = 0.4,
-        r2: float = 0.45,
-        m1: float = 0.5,
-        m2: float = 0.5,
-        theta1_0: float = 20,
-        theta2_0: float = 55,
-        w1_0: float = 0,
-        w2_0: float = 0,
-        g: float = 9.81,
-        T: float = 10,
-        steps: int = 1000,
-        method: str = "RK45"
-    ) -> tuple:
+class DoublePendulum:
 
-    a1 = lambda theta1, theta2: r2/r1 * (m2 / (m1 + m2)) * np.cos(theta1 - theta2)
-    a2 = lambda theta1, theta2: r1/r2 * np.cos(theta1 - theta2)
-    f1 = lambda theta1, theta2, w2: - r2/r1 * (m2 / (m1 + m2)) * w2**2 * np.sin(theta1 - theta2) - g/r1 * np.sin(theta1)    # 'w' is omega (or dtheta)
-    f2 = lambda theta1, theta2, w1: r1/r2 * w1**2 * np.sin(theta1 - theta2) - g/r2 * np.sin(theta2)
+    def __init__(self, params: Optional[DPSystemParams] = None, config: Optional[DPConfig] = None) -> None:
+        self.params = params if params else DPSystemParams()
+        self.config = config if config else DPConfig()
+        self.t = None
+        self.Z = None
+        self._solve()    # automatically solve the system upon initialisation
 
-    def g1(z1, z2, z3, z4):
-        """State variables: z1 = θ1, z2 = θ2, z3 = ω1, z4 = ω2."""
-        alpha1, alpha2 = a1(z1, z2), a2(z1, z2)
-        func1, func2 = f1(z1, z2, z4), f2(z1, z2, z3)
-        return (func1 - alpha1 * func2) / (1 - alpha1 * alpha2)
+    def _solve(self) -> None:
+        """Private method to solve the ODE system for the double pendulum."""
+        func = dp_ode(self.params)    # get the ODE system function f(t, Z)
+        # --- INITIAL CONDITIONS --- #
+        p = self.params    # shorthand alias for quick reference
+        theta1_0, theta2_0 = np.radians(p.theta1_0), np.radians(p.theta2_0)
+        w1_0, w2_0 = np.radians(p.w1_0), np.radians(p.w2_0)
+        Z0 = [theta1_0, theta2_0, w1_0, w2_0]    # initial conditions (state vector)
+        # --- EVALUATION AND SOLVE --- #
+        T, steps = p.T_secs, p.steps
+        method, rtol, atol = p.ode_method, p.rtol, p.atol
+        t_span = (0, T)
+        t_eval = np.linspace(0, T, steps)
+        dt = (t_span[1] - t_span[0]) / (steps - 1)    # rough estimate of time step (not used in solve_ivp)
+        print(f"\nrunning ODE solver ({method=})...")
+        print(f"t_eval=({t_eval[0]:.0f}, {t_eval[-1]}), {steps=:,}, dt≈{dt:.2f}")
+        sol = solve_ivp(func, t_span, Z0, method=method, t_eval=t_eval, rtol=rtol, atol=atol)
+        # --- EXTRACT OUTPUTS --- #
+        t, Z = sol.t, sol.y
+        success = sol.success
+        print(f"\nsolver success: {success} ({sol.nfev:,} nfev)")
+        print(f"t.shape: {t.shape}, Z.shape: {Z.shape}\n")
+        self.t, self.Z = t, Z
 
-    def g2(z1, z2, z3, z4):
-        """State variables: z1 = θ1, z2 = θ2, z3 = ω1, z4 = ω2."""
-        alpha1, alpha2 = a1(z1, z2), a2(z1, z2)
-        func1, func2 = f1(z1, z2, z4), f2(z1, z2, z3)
-        return (- alpha2 * func1 + func2) / (1 - alpha1 * alpha2)
+    def solve(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Public interface to solve or re-solve the system and return the solution."""
+        if self.t is None or self.Z is None:
+            self._solve()
+        return self.t, self.Z   # return existing cached solution if available
+    
+    def _check_solved(self) -> None:
+        """Check if the system has been solved, raise an error if not."""
+        if self.t is None or self.Z is None:
+            print(f"\nEmpty solutions, re-running ODE solver...")
+            self.t, self.Z = self.solve()    # call the solve method to ensure t and Z are populated
 
-    def func_dp(t, Z):
-        """
-        Numerically integrate a system of ODEs given an initial value:
-        dy/dt = f(t, Z) and Z(t0) = Z0, where Z is the state vector.
-        """
-        z1, z2, z3, z4 = Z              # unpack state variables
-        dz1 = z3                        # dθ1
-        dz2 = z4                        # dθ2
-        dz3 = g1(z1, z2, z3, z4)        # ddθ1
-        dz4 = g2(z1, z2, z3, z4)        # ddθ2
-        return [dz1, dz2, dz3, dz4]     # return state derivatives
+    def plot_dynamics(self, xlim_timespan: bool = True) -> None:
+        """Plot θ(t), ω(t), and E(t) for a Double Pendulum (DP) system."""
+        
+        self._check_solved()    # check if the system has been solved
+        t, Z = self.t, self.Z
+        # unpack parameters and config
+        p, cf = self.params, self.config
+        r1, r2, m1, m2, g = p.r1, p.r2, p.m1, p.m2, p.g
+        theta1, theta2, w1, w2 = Z[0], Z[1], Z[2], Z[3]    # state variables
+        if cf.in_degrees:    # convert angles to degrees if required
+            # don't modify the original arrays, as they will be used for energy calculations (in radians)
+            theta1_plot, theta2_plot = np.degrees(theta1), np.degrees(theta2)   
+            w1_plot, w2_plot = np.degrees(w1), np.degrees(w2)
+        
+        # ----- FIGURE SETUP ----- #
+        fig, ax = plt.subplots(nrows=3, figsize=cf.figure_size, sharex=True)
 
-    # ----- INITICAL CONDITIONS ----- #
-    theta1_0, theta2_0 = np.radians(theta1_0), np.radians(theta2_0)
-    w1_0, w2_0 = np.radians(w1_0), np.radians(w2_0)
-    Z0 = [theta1_0, theta2_0, w1_0, w2_0]   # initial conditions (state vector)
+        # ----- ANGULAR DISPLACEMENT, θ(t) ----- #
+        ax[0].set_ylabel("angular displacement, " + (r"$\theta$ ($^{\circ}$)" if cf.in_degrees else r"$\theta$ (rad)"))
+        ax[0].plot(t, theta1_plot, color=cf.m1_colour, label=r"$\theta_1$")
+        ax[0].plot(t, theta2_plot, color=cf.m2_colour, label=r"$\theta_2$")
 
-    # ----- EVALUATION & SOLVE ----- #
-    t_span = (0, T)
-    t_eval = np.linspace(0, T, steps)
-    dt = (t_span[1] - t_span[0]) / (steps - 1)
+        # ----- ANGULAR VELOCITY, ω(t) ----- #
+        ax[1].set_ylabel("angular velocity, " + (r"$\omega$ ($^{\circ}/s$)" if cf.in_degrees else r"$\omega$ (rad/s)"))
+        ax[1].plot(t, w1_plot, color=cf.m1_colour, label=r"$\omega_1$")
+        ax[1].plot(t, w2_plot, color=cf.m2_colour, label=r"$\omega_2$")
 
-    print(f"\nrunning ODE solver ({method=})...")
-    print(f"t_eval=({t_eval[0]:.0f}, {t_eval[-1]}), {steps=:,}, dt≈{dt:.2f}")#
-    sol = solve_ivp(func_dp, t_span, Z0, method="RK45", t_eval=t_eval)
+        # ----- SYSTEM ENERGY, E(t) ----- #
+        # cartesian velocity components
+        x1_dot = r1*w1*np.cos(theta1)
+        x2_dot = x1_dot + r2*w2*np.cos(theta2)
+        y1_dot = r1*w1*np.sin(theta1)
+        y2_dot = y1_dot + r2*w2*np.sin(theta2)
+        # kinetic energy, KE
+        T = 0.5*m1*(x1_dot**2 + y1_dot**2) + 0.5*m2*(x2_dot**2 + y2_dot**2)
+        # potential energy, PE
+        y1 = -r1*np.cos(theta1)
+        y2 = y1 - r2*np.cos(theta2)
+        V = m1*g*y1 + m2*g*y2
+        # total energy
+        E = T + V
+        ax[2].set_xlabel(r"time, $t$ ($s$)")
+        ax[2].set_ylabel(r"system energy, $E$ ($J$)")
+        ax[2].plot(t, T, color=cf.ke_colour, label=r"$E_k$")
+        ax[2].plot(t, V, color=cf.pe_colour, label=r"$E_p$")
+        ax[2].plot(t, E, color=cf.te_colour, label=r"$E_T$")
 
-    # ----- EXTRACT OUTPUTS ----- #
-    t, Z = sol.t, sol.y
-    success = sol.success
-    print(f"\nsolver success: {success} ({sol.nfev:,} nfev)")
-    print(f"t.shape: {t.shape}, Z.shape: {Z.shape}\n")
-    p = [r1, r2, m1, m2, g, T, theta1_0, theta2_0, w1_0, w2_0] # also return vector of essential parameters
+        # configure for each subfigure:
+        for axis in ax:
+            axis.grid(True, alpha=cf.grid_alpha)
+            axis.yaxis.set_major_locator(MaxNLocator(cf.n_max_ticks))
+            if cf.display_legend:
+                axis.legend(loc="upper right")
+            if xlim_timespan:
+                axis.set_xlim(t[0], t[-1])    
 
-    return t, Z, p
-
-
-def plot_graphs(
-        t, Z, p,
-        in_degrees: bool = True,
-        m1_colour: str = "tab:green",
-        m2_colour: str = "tab:red",
-        ke_colour: str = "tab:blue",
-        pe_colour: str = "tab:orange",
-        te_colour: str = "tab:purple",
-        figure_size: tuple = (8, 7),
-        grid_alpha: float = 0.15,
-        y_axis_max_ticks: int = 5,
-        show_legend: bool = True
-    ) -> None:
-    """
-    Plot θ(t), ω(t), and E(t) over time for a double pendulum.
-
-    params:
-        `t`: array of time values
-        `Z`: state matrix [θ1, θ2, ω1, ω2]
-        `p`: parameter vector [r1, r2, m1, m2, g, θ1_0, θ2_0, ω1_0, ω2_0]
-        `in_degrees`: flag between degrees and radians
-        ... : plotting customisation parameters
-    """
-    r1, r2, m1, m2, g, *_ = p
-    theta1, theta2, w1, w2 = Z[0], Z[1], Z[2], Z[3]
-
-    if in_degrees:
-        theta1_plot, theta2_plot = np.degrees(theta1), np.degrees(theta2)
-        w1_plot, w2_plot = np.degrees(w1), np.degrees(w2)
-    else:
-        theta1_plot, theta2_plot = theta1, theta2
-        w1_plot, w2_plot = w1, w2
-
-    fig, ax = plt.subplots(nrows=3, figsize=figure_size, sharex=True)
-
-    # ----- ANGULAR DISPLACEMENT ----- #
-    ax[0].grid(True, alpha=grid_alpha)
-    ax[0].yaxis.set_major_locator(MaxNLocator(y_axis_max_ticks))
-    ax[0].set_ylabel("angular displacement, " + (r"$\theta$ ($^{\circ}$)" if in_degrees else r"$\theta$ (rad)"))
-    ax[0].plot(t, theta1_plot, color=m1_colour, label=r"$\theta_1$")
-    ax[0].plot(t, theta2_plot, color=m2_colour, label=r"$\theta_2$")
-    if show_legend:
-        ax[0].legend(loc="best")
-
-    # ----- ANGULAR VELOCITY ----- #
-    ax[1].grid(True, alpha=grid_alpha)
-    ax[1].yaxis.set_major_locator(MaxNLocator(y_axis_max_ticks))
-    ax[1].set_ylabel("angular velocity, " + (r"$\omega$ ($^{\circ}/s$)" if in_degrees else r"$\omega$ (rad/s)"))
-    ax[1].plot(t, w1_plot, color=m1_colour, label=r"$\omega_1$")
-    ax[1].plot(t, w2_plot, color=m2_colour, label=r"$\omega_2$")
-    if show_legend:
-        ax[1].legend(loc="best")
-
-    # ----- ENERGY PLOTS ----- #
-    # cartesian velocity components
-    x1_dot = r1 * w1 * np.cos(theta1)
-    y1_dot = r1 * w1 * np.sin(theta1)
-    x2_dot = x1_dot + r2 * w2 * np.cos(theta2)
-    y2_dot = y1_dot + r2 * w2 * np.sin(theta2)
-    # kinetic energy, KE
-    T = 0.5 * m1 * (x1_dot**2 + y1_dot**2) + 0.5 * m2 * (x2_dot**2 + y2_dot**2)
-    # potential energy, PE
-    y1 = -r1 * np.cos(theta1)
-    y2 = y1 - r2 * np.cos(theta2)
-    V = m1 * g * y1 + m2 * g * y2
-    # total energy
-    E = T + V
-
-    ax[2].grid(True, alpha=grid_alpha)
-    ax[2].set_xlabel(r"time, $t$ ($s$)")
-    ax[2].set_ylabel(r"system energy, $E$ ($J$)")
-    ax[2].yaxis.set_major_locator(MaxNLocator(y_axis_max_ticks))
-    ax[2].plot(t, T, color=ke_colour, label=r"KE ($T$)")
-    ax[2].plot(t, V, color=pe_colour, label=r"PE ($V$)")
-    ax[2].plot(t, E, color=te_colour, label=r"Total ($E$)")
-    if show_legend:
-        ax[2].legend(loc="best")
-
-    plt.tight_layout()
-    plt.show()
+        fig.tight_layout()
+        plt.show()
 
 
 def plot_frames(
@@ -176,7 +137,7 @@ def plot_frames(
         x_axis_limits: tuple = None,
         y_axis_limits: tuple = None,
         max_axis_extent: float = 1.1,
-        show_legend: bool = False,
+        display_legend: bool = False,
         draw_start: bool = False,
         draw_end: bool = False,
         show_trail: bool = False,
@@ -253,7 +214,7 @@ def plot_frames(
     else:
         y_extent = max_axis_extent * np.max(np.abs(y2))
         ax.set_ylim(-y_extent, y_extent)
-    if show_legend:
+    if display_legend:
         ax.legend(loc="best")
     plt.show()
 
@@ -278,7 +239,7 @@ def animate_dp(
         x_axis_limits: tuple = None,
         y_axis_limits: tuple = None,
         max_axis_extent: float = 1.2,
-        show_legend: bool = False
+        display_legend: bool = False
     ) -> None:
     """
     Animate the double pendulum using matplotlib's FuncAnimation.
@@ -293,7 +254,7 @@ def animate_dp(
         line_width=line_width, figure_size=figure_size,
         grid_alpha=grid_alpha, n_max_ticks=n_max_ticks,
         x_axis_limits=x_axis_limits, y_axis_limits=y_axis_limits,
-        max_axis_extent=max_axis_extent, show_legend=show_legend,
+        max_axis_extent=max_axis_extent, display_legend=display_legend,
         show_trail=True,    
         trail_length_pct=100,   # show full trails from start to finish
         draw_start=True,        # draw first frame
@@ -352,14 +313,14 @@ def animate_dp(
     else:
         y_extent = max_axis_extent * np.max(np.abs(y2))
         ax.set_ylim(-y_extent, y_extent)
-    if show_legend:
+    if display_legend:
         ax.legend(loc="best")
 
     # ----- PROGRESS BAR ----- #
     pbar = tqdmFA(total=len(t))
     
     # --- ANIMATION FUNCTION SETUP --- #
-    def init():
+    def init() -> tuple:
         link1.set_data([], []), link2.set_data([], [])
         mass1.set_offsets([x1[0], y1[0]]), mass2.set_offsets([x2[0], y2[0]])
         if trail_length_pct > 0:
@@ -367,7 +328,7 @@ def animate_dp(
             return link1, link2, mass1, mass2, m1_trail, m2_trail
         return link1, link2, mass1, mass2
 
-    def update(frame):
+    def update(frame) -> tuple:
         # update link and mass positions:
         link1.set_data([x0, x1[frame]], [y0, y1[frame]])
         link2.set_data([x1[frame], x2[frame]], [y1[frame], y2[frame]])
@@ -428,51 +389,20 @@ def animate_dp(
     return None
 
 
-if __name__ == "__main__":
-
-    # ----- EXAMPLE FRAME PLOT ----- #
-    
-    # t, Z, p = dp_sim(
-    #     r1=0.5,
-    #     r2=0.5,
-    #     m1=0.5,
-    #     m2=0.25,
-    #     theta1_0=35,
-    #     theta2_0=65
-    # )
-
-    # plot_frames(t, Z, p)
-
-    # square_limits = 1.2
-    # plot_pos(
-    #     t, Z, p,
-    #     x_axis_limits=(-square_limits, square_limits),
-    #     y_axis_limits=(-square_limits, 0.5),
-    #     # draw_start=True,
-    #     # draw_end=True
-    #     n_frames=5,
-    #     # show_trail=True
-    # )
-
-    # ----- EXAMPLE ANIMATION ----- #
-
-    t, Z, p = dp_sim(
-        r1=0.5, r2=0.5,
-        m1=0.3, m2=0.3,
-        theta1_0=55, theta2_0=130,
-        T=10, steps=600,
+def dp1() -> None:
+    """Example usage of the DoublePendulum class to plot dynamics."""
+    dp = DoublePendulum(
+        params=DPSystemParams(
+            theta1_0=55,  
+            theta2_0=130,  
+            T_secs=10,              # simulation time in seconds
+            steps=600,              # number of steps in the simulation
+            ode_method="RK45",      # ODE solver method
+            rtol=1e-6,              # relative tolerance for the ODE solver
+        ),
+        config=DPConfig(
+            figure_size=(10, 10),  # size of the figure
+            max_axis_extent=1.2,    # maximum extent of the axes (if no limits are provided)
+        )
     )
-
-    animate_dp(
-        t, Z, p,
-        m1_markersize=200,
-        m2_markersize=200,
-        line_width=0.65,
-        trail_linewidth=0.5,
-        trail_length_pct=0,     # no trails
-        figure_size=(10, 10),
-        x_axis_limits=(-1.2, 1.2),
-        y_axis_limits=(-1.2, 0.5),
-        max_axis_extent=1.2,
-        dots_per_inch=200,
-    )
+    dp.plot_dynamics()    # Plot θ(t), ω(t), and E(t)
