@@ -54,4 +54,4 @@ class DPConfig:
     te_colour: str = "tab:purple"
     # animation
     trail_length_pct: float = 5
-    trail_linewidth: float = 0.8
+    trail_linewidth: float = 0.6
