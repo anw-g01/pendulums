@@ -54,5 +54,6 @@ class DPConfig:
     te_colour: str = "orange"
     # animation
     trail_length_pct: float = 5
-    trail_linewidth: float = 0.55
+    trail_linewidth: float = 0.75
+    trail_alpha: float = 0.75
     video_duration: float = 10.0
