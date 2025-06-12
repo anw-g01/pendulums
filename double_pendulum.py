@@ -61,6 +61,38 @@ class DoublePendulum:
             print(f"\nEmpty solutions, re-running ODE solver...")
             self.t, self.Z = self.solve()    # call the solve method to ensure t and Z are populated
 
+    def _wrap_angles(self, angles: Tuple[np.ndarray, np.ndarray], threshold: float = np.pi) -> Tuple[np.ndarray, np.ndarray]:
+        """Wrap angles to the range [-π, π] and handle large jumps for better visualisation."""
+        # wrap angles to [-π, π] range:
+        theta1, theta2 = angles
+        theta1 = np.mod(theta1 + np.pi, 2*np.pi) - np.pi    # to wrap [0, 2π] use np.mod(angles, 2*np.pi)
+        theta2 = np.mod(theta2 + np.pi, 2*np.pi) - np.pi
+        # find indices just before any angle jumps (only likely for the second angle):
+        diff1, diff2 = np.diff(theta1), np.diff(theta2)
+        jumps1 = np.where(np.abs(diff1) > threshold)[0]
+        jumps2 = np.where(np.abs(diff2) > threshold)[0]
+        print(f"\ndiscontinuities (angle jumps) detected: ", end="")
+        print(f"θ1: {len(jumps1)} jumps, θ2: {len(jumps2)} jumps")
+        if len(jumps1) == 0 and len(jumps2) == 0:
+            return theta1, theta2, self.t
+        # handle theta1 jumps:
+        if len(jumps1) > 0:
+            t1_plot, theta1_plot = self.t.copy(), theta1.copy()
+            for idx in reversed(jumps1):
+                t1_plot = np.insert(t1_plot, idx + 1, np.nan)
+                theta1_plot = np.insert(theta1_plot, idx + 1, np.nan)
+        else:
+            theta1_plot, t1_plot = theta1, self.t
+        # handle theta2 jumps:
+        if len(jumps2) > 0:
+            theta2_plot, t2_plot = theta2.copy(), self.t.copy()
+            for idx in reversed(jumps2):
+                t2_plot = np.insert(t2_plot, idx + 1, np.nan)
+                theta2_plot = np.insert(theta2_plot, idx + 1, np.nan)
+        else:
+            theta2_plot, t2_plot = theta2, self.t
+        return t1_plot, t2_plot, theta1_plot, theta2_plot
+    
     def plot_dynamics(self, xlim_timespan: bool = True) -> None:
         """Plot θ(t), ω(t), and E(t) for a Double Pendulum (DP) system."""
         
@@ -70,9 +102,14 @@ class DoublePendulum:
         p, cf = self.params, self.config
         r1, r2, m1, m2, g = p.r1, p.r2, p.m1, p.m2, p.g
         theta1, theta2, w1, w2 = Z[0], Z[1], Z[2], Z[3]    # state variables
-        if cf.in_degrees:    # convert angles to degrees if required
+        # wrap angles to [-π, π] range for better visualisation:
+        theta1_plot = np.mod(theta1 + np.pi, 2 * np.pi) - np.pi    # to wrap [0, 2π] use np.mod(angles, 2*np.pi)
+        theta2_plot = np.mod(theta2 + np.pi, 2 * np.pi) - np.pi
+        # wrap to [-π, π] using arctan2:
+        t1_plot, t2_plot, theta1_plot, theta2_plot = self._wrap_angles((theta1_plot, theta2_plot))
+        if cf.in_degrees:    
             # don't modify the original arrays, as they will be used for energy calculations (in radians)
-            theta1_plot, theta2_plot = np.degrees(theta1), np.degrees(theta2)   
+            theta1_plot, theta2_plot = np.degrees(theta1_plot), np.degrees(theta2_plot)   
             w1_plot, w2_plot = np.degrees(w1), np.degrees(w2)
         
         # ----- FIGURE SETUP ----- #
@@ -80,8 +117,8 @@ class DoublePendulum:
 
         # ----- ANGULAR DISPLACEMENT, θ(t) ----- #
         ax[0].set_ylabel("angular displacement, " + (r"$\theta$ ($^{\circ}$)" if cf.in_degrees else r"$\theta$ (rad)"))
-        ax[0].plot(t, theta1_plot, color=cf.m1_colour, label=r"$\theta_1$")
-        ax[0].plot(t, theta2_plot, color=cf.m2_colour, label=r"$\theta_2$")
+        ax[0].plot(t1_plot, theta1_plot, color=cf.m1_colour, label=r"$\theta_1$")
+        ax[0].plot(t2_plot, theta2_plot, color=cf.m2_colour, label=r"$\theta_2$")
 
         # ----- ANGULAR VELOCITY, ω(t) ----- #
         ax[1].set_ylabel("angular velocity, " + (r"$\omega$ ($^{\circ}/s$)" if cf.in_degrees else r"$\omega$ (rad/s)"))
