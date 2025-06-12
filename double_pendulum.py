@@ -120,7 +120,7 @@ class DoublePendulum:
         fig.tight_layout()
         plt.show()
 
-    def _setup_figure(self, x2_coords: Tuple[np.ndarray, np.ndarray]) -> Tuple[plt.Figure, plt.Axes]:
+    def _setup_figure(self) -> Tuple[plt.Figure, plt.Axes]:
         """Returns the base figure and axes used for the Double Pendulum plot and animation."""
         cf = self.config
         # setup main figure and axes
@@ -140,17 +140,11 @@ class DoublePendulum:
         ax.scatter(x0, y0, marker="o", color=cf.origin_colour, s=cf.origin_markersize, zorder=1)  # origin pivot
         # set axis limits
         # independent overrides (if only one set of limits is provided):
-        x2, y2 = x2_coords      # unpack coordinates of the second mass (bob)
-        if cf.x_axis_limits:
-            ax.set_xlim(cf.x_axis_limits)
-        else:
-            x_extent = cf.max_axis_extent * np.max(np.abs(x2))
-            ax.set_xlim(-x_extent, x_extent)
-        if cf.y_axis_limits:
-            ax.set_ylim(cf.y_axis_limits)
-        else:
-            y_extent = cf.max_axis_extent * np.max(np.abs(y2))
-            ax.set_ylim(-y_extent, y_extent)
+        L = self.params.r1 + self.params.r2     # maximum oustretched length of the pendulum links
+        axis_extent = cf.max_axis_extent * L    # same on all sides
+        x_extent = cf.x_axis_limits if cf.x_axis_limits is not None else (-axis_extent, axis_extent)
+        y_extent = cf.y_axis_limits if cf.y_axis_limits is not None else (-axis_extent, axis_extent)
+        ax.set_xlim(x_extent), ax.set_ylim(y_extent)
         return fig, ax
 
     def plot_frames(
@@ -169,7 +163,7 @@ class DoublePendulum:
         x1, y1 = x0 + r1*np.sin(theta1), y0 - r1*np.cos(theta1)
         x2, y2 = x1 + r2*np.sin(theta2), y1 - r2*np.cos(theta2)
         # setup base figure and axes
-        fig, ax = self._setup_figure((x2, y2))  # second bob used for axis limits (furthest point from origin)
+        fig, ax = self._setup_figure()
         trail_length = int((trail_length_pct / 100) * len(t)) if trail_length_pct > 0 else 0
         def draw(ax: plt.Axes, i: int, show_trail: bool = False, alpha: float = 1.0) -> None:
             """Draws the double pendulum at step index `i` with adjustable transparency."""
@@ -184,7 +178,6 @@ class DoublePendulum:
                 i0 = max(0, i - trail_length)
                 ax.plot(x1[i0:i + 1], y1[i0:i + 1], color=cf.m1_colour, linewidth=cf.trail_linewidth, alpha=alpha, zorder=0)
                 ax.plot(x2[i0:i + 1], y2[i0:i + 1], color=cf.m2_colour, linewidth=cf.trail_linewidth, alpha=alpha, zorder=0)
-        
         # draw first frame with low opacity:
         if "start" in display_mode: draw(ax, i=0, alpha=0.4)
         # draw last frame (default: with full trail):
@@ -197,7 +190,7 @@ class DoublePendulum:
             for idx, i in enumerate(indices):
                 # opacity fades from 0.1 to 1.0 linearly across frames
                 alpha = 0.1 + 0.9 * (idx / (n - 1)) if n > 1 else 1.0
-                show_trail_this_frame = (i == indices[-1]) and show_trail
+                show_trail_this_frame = (i == indices[-1]) and show_trail    # bool: only show trail on the last frame
                 draw(ax, i=i, alpha=alpha, show_trail=show_trail_this_frame)
         plt.show()
 
@@ -385,9 +378,8 @@ def dp1() -> None:
         ),
         config=DPConfig(
             figure_size=(10, 10),       # size of the figure
-            max_axis_extent=2,          # maximum extent of the axes (if no limits are provided)
-            x_axis_limits=(-1, 1),      # x-axis limits
-            y_axis_limits=(-1, 0.5),    # y-axis limits
+            x_axis_limits=(-0.9, 0.9),  # x-axis limits
+            y_axis_limits=(-0.9, 0.2),  # y-axis limits
             trail_length_pct=5,         # length of the trail as a percentage of the total steps
         )
     )

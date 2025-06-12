@@ -31,9 +31,9 @@ class DPConfig:
     dashed_line_alpha: float = 0.15
     dashed_line_width: float = 0.8
     # axis configuration:
-    n_max_ticks: int = 5
-    x_axis_limits: Optional[Tuple[float, float]] = (None, None)
-    y_axis_limits: Optional[Tuple[float, float]] = (None, None)
+    n_max_ticks: int = 3
+    x_axis_limits: Optional[Tuple[float, float]] = None
+    y_axis_limits: Optional[Tuple[float, float]] = None
     max_axis_extent: float = 1.2
     in_degrees: bool = True     # angles in degrees or radians
     # markers, colours, and linestyles:
