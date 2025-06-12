@@ -50,8 +50,9 @@ class DPConfig:
     draw_n_frames: int = 5    # for the static plot
     # energy plots:
     ke_colour: str = "tab:blue"
-    pe_colour: str = "tab:orange"
-    te_colour: str = "tab:purple"
+    pe_colour: str = "tab:purple"
+    te_colour: str = "orange"
     # animation
     trail_length_pct: float = 5
-    trail_linewidth: float = 0.6
+    trail_linewidth: float = 0.55
+    video_duration: float = 10.0

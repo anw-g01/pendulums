@@ -106,14 +106,13 @@ class DoublePendulum:
         ax[2].set_ylabel(r"system energy, $E$ ($J$)")
         ax[2].plot(t, T, color=cf.ke_colour, label=r"$E_k$")
         ax[2].plot(t, V, color=cf.pe_colour, label=r"$E_p$")
-        ax[2].plot(t, E, color=cf.te_colour, label=r"$E_T$")
+        ax[2].plot(t, E, color=cf.te_colour, label=r"$E_T$", linewidth=plt.rcParams["lines.linewidth"] + 0.2)
 
         # configure for each subfigure:
         for axis in ax:
             axis.grid(True, alpha=cf.grid_alpha)
             axis.yaxis.set_major_locator(MaxNLocator(cf.n_max_ticks))
-            if cf.display_legend:
-                axis.legend(loc="upper right")
+            axis.legend(loc="upper right")
             if xlim_timespan:
                 axis.set_xlim(t[0], t[-1])    
 
@@ -203,6 +202,7 @@ class DoublePendulum:
             f"θ1={p.theta1_0:.0f}_θ2={p.theta2_0:.0f}_"
             f"steps={p.steps:,}(T={p.T_secs:.0f})_"
             f"@{cf.trail_length_pct}%trail_"
+            f"vid_dur={cf.video_duration:.1f}s_"
             f"{m1=:.1f}_{m2=:.1f}_"
             f"{r1=:.1f}_{r2=:.1f}_"
             ".mp4"
@@ -224,12 +224,15 @@ class DoublePendulum:
             print(f"<CLOSE FIGURE WINDOW TO START WRITING TO MP4>")
             # show the first and last frames, and trail length:
             self.plot_frames(display_mode=["start", "end"], show_trail=True, trail_length_pct=cf.trail_length_pct)
-        # key animation statistics:
-        interval = int(1000 / fps)    # convert FPS to milliseconds
-        steps = len(t)    # total number of time steps
+        # video duration calculations:
+        steps = int(fps * cf.video_duration)    # required frames for the video duration
         trail_length = int((cf.trail_length_pct / 100) * steps)
+        if steps > len(t):
+            raise ValueError(f"{steps:,} frames required for a {cf.video_duration:.1f} sec video at {fps} FPS, but only {len(t):,.0f} frames ({len(t) / fps:.1f} sec) available. Increase `steps` or reduce `video_duration`.")
         print(f"\n# ----- DOUBLE PENDULUM (DP) ANIMATION ----- #")
-        print(f"{steps:,} steps @ {fps} fps (~{interval * 1e-3:.3f} sec/frame), dpi={dpi}")
+        print(f"NOTE: using {steps}/{len(t)} time steps => {cf.video_duration:.1f} sec video duration")
+        interval = int(1000 / fps)    # convert FPS to milliseconds
+        print(f"{steps:,} frames @ {fps} fps (~{interval * 1e-3:.3f} sec/frame), dpi={dpi}")
         print(f"writing {steps} frames to MP4...\n")
         # ----- EXTRACT PARAMETERS ----- #
         r1, r2 = p.r1, p.r2    # lengths of the pendulum links
@@ -302,23 +305,21 @@ def dp1() -> None:
     """Example usage of the DoublePendulum class to plot dynamics."""
     dp = DoublePendulum(
         params=DPSystemParams(
-            theta1_0=60,  
-            theta2_0=140,  
+            theta1_0=75,  
+            theta2_0=165,  
             T_secs=10,              # simulation time in seconds
             steps=1000,              # number of steps in the simulation
             ode_method="RK45",      # ODE solver method
-            rtol=1e-6,              # relative tolerance for the ODE solver
+            rtol=1e-9,              # relative tolerance for the ODE solver
         ),
         config=DPConfig(
             figure_size=(10, 10),       # size of the figure
             x_axis_limits=(-0.9, 0.9),  # x-axis limits
-            y_axis_limits=(-0.9, 0.2),  # y-axis limits
-            trail_length_pct=3,         # length of the trail as a percentage of the total steps
+            y_axis_limits=(-0.9, 0.4),  # y-axis limits
+            trail_length_pct=4,         # length of the trail as a percentage of the total steps
+            video_duration=10.0,        # duration of MP4 video in seconds
         )
     )
-
-    # dp.plot_dynamics()    # Plot θ(t), ω(t), and E(t)
-
+    dp.plot_dynamics()    # Plot θ(t), ω(t), and E(t)
     dp.plot_frames()
-    
     dp.animate(dpi=100)
