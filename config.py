@@ -24,16 +24,17 @@ class DPSystemParams:
 @dataclass
 class DPConfig:
     """Configuration for plotting the Double Pendulum within a figure."""
-    # figure, axes, and grids:
+    # figure properties:
     figure_size: Tuple[int, int] = (10, 10)
     figure_title: str = "Double Pendulum Simulation"
     grid_alpha: float = 0.2
+    dashed_line_alpha: float = 0.1
+    dashed_line_width: float = 0.8
+    # axis configuration:
     n_max_ticks: int = 5
-    origin: Tuple[float, float] = (0, 0)
     x_axis_limits: Optional[Tuple[float, float]] = (None, None)
     y_axis_limits: Optional[Tuple[float, float]] = (None, None)
-    max_axis_extent: float = 1.1
-    display_legend: bool = True
+    max_axis_extent: float = 1.2
     in_degrees: bool = True     # angles in degrees or radians
     # markers, colours, and linestyles:
     m1_colour: str = "tab:green"
@@ -43,6 +44,9 @@ class DPConfig:
     link1_colour: str = "black"
     link2_colour: str = "black"
     link_linewidth: float = 0.75
+    origin: Tuple[float, float] = (0, 0)
+    origin_colour: str = "black"
+    origin_markersize: int = 12
     draw_n_frames: int = 5    # for the static plot
     # energy plots:
     ke_colour: str = "tab:blue"
