@@ -155,10 +155,10 @@ class DoublePendulum:
 
     def plot_frames(
         self,
-        draw_start: bool = True,
-        draw_end: bool = True,
+        display_mode: list[str] = ["start", "end"],
         show_trail: bool = True,
         trail_length_pct: float = 100,
+        num_frames: int = 5
     ) -> None:
         """Plot STATIC Double Pendulum frames using the configured parameters."""
         p, cf = self.params, self.config
@@ -184,13 +184,14 @@ class DoublePendulum:
                 i0 = max(0, i - trail_length)
                 ax.plot(x1[i0:i + 1], y1[i0:i + 1], color=cf.m1_colour, linewidth=cf.trail_linewidth, alpha=alpha, zorder=0)
                 ax.plot(x2[i0:i + 1], y2[i0:i + 1], color=cf.m2_colour, linewidth=cf.trail_linewidth, alpha=alpha, zorder=0)
+        
         # draw first frame with low opacity:
-        if draw_start: draw(ax, i=0, alpha=0.4)
+        if "start" in display_mode: draw(ax, i=0, alpha=0.4)
         # draw last frame (default: with full trail):
-        if draw_end: draw(ax, i=-1, show_trail=show_trail)  
+        if "end" in display_mode: draw(ax, i=-1, show_trail=show_trail)  
         # draw all frames with increasing opacity:
-        if not (draw_start or draw_end):
-            step = max(1, len(t) // cf.draw_n_frames)
+        if "fade" in display_mode:
+            step = max(1, len(t) // num_frames)   # equally spaced frames (to draw)
             indices = list(range(0, len(t), step))
             n = len(indices)
             for idx, i in enumerate(indices):
@@ -383,13 +384,15 @@ def dp1() -> None:
             rtol=1e-6,              # relative tolerance for the ODE solver
         ),
         config=DPConfig(
-            figure_size=(10, 10),   # size of the figure
-            max_axis_extent=2,      # maximum extent of the axes (if no limits are provided)
-            x_axis_limits=(-1, 1),  # x-axis limits
-            y_axis_limits=(-1, 0.5),  # y-axis limits
+            figure_size=(10, 10),       # size of the figure
+            max_axis_extent=2,          # maximum extent of the axes (if no limits are provided)
+            x_axis_limits=(-1, 1),      # x-axis limits
+            y_axis_limits=(-1, 0.5),    # y-axis limits
+            trail_length_pct=5,         # length of the trail as a percentage of the total steps
         )
     )
 
     # dp.plot_dynamics()    # Plot θ(t), ω(t), and E(t)
 
     dp.plot_frames()
+    dp.plot_frames(display_mode=["end"], trail_length_pct=5)

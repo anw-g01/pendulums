@@ -28,7 +28,7 @@ class DPConfig:
     figure_size: Tuple[int, int] = (10, 10)
     figure_title: str = "Double Pendulum Simulation"
     grid_alpha: float = 0.2
-    dashed_line_alpha: float = 0.1
+    dashed_line_alpha: float = 0.15
     dashed_line_width: float = 0.8
     # axis configuration:
     n_max_ticks: int = 5
@@ -39,11 +39,11 @@ class DPConfig:
     # markers, colours, and linestyles:
     m1_colour: str = "tab:green"
     m2_colour: str = "tab:red"
-    m1_markersize: int = 200
-    m2_markersize: int = 200
+    m1_markersize: int = 300
+    m2_markersize: int = 300
     link1_colour: str = "black"
     link2_colour: str = "black"
-    link_linewidth: float = 0.75
+    link_linewidth: float = 0.8
     origin: Tuple[float, float] = (0, 0)
     origin_colour: str = "black"
     origin_markersize: int = 12
