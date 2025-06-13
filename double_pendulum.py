@@ -24,9 +24,13 @@ class DoublePendulum:
     def __init__(self, params: Optional[DPSystemParams] = None, config: Optional[DPConfig] = None) -> None:
         self.params = params if params else DPSystemParams()
         self.config = config if config else DPConfig()
-        self.t = None
-        self.Z = None
-        self._solve()    # automatically solve the system upon initialisation
+        self.t = None               # time vector
+        self.Z = None               # state vector (angles and angular velocities)
+        self._solve()               # automatically solve the system upon initialisation
+        self.T = None               # kinetic energy
+        self.V = None               # potential energy
+        self.E = None               # total energy
+        self._system_energies()     # calculate energies after solving the system
 
     def _solve(self) -> None:
         """Private method to solve the ODE system for the double pendulum."""
@@ -64,6 +68,38 @@ class DoublePendulum:
             print(f"\nEmpty solutions, re-running ODE solver...")
             self.t, self.Z = self.solve()    # call the solve method to ensure t and Z are populated
 
+    def _system_energies(self) -> None:
+        """Calculate the kinetic, potential, and total energy of the double pendulum system over the time span."""
+        self._check_solved()    # ensure the system has been solved
+        print(f"\ncalculating system energies (E_k, E_p, E_T)...")
+        Z, p = self.Z, self.params
+        r1, r2, m1, m2, g = p.r1, p.r2, p.m1, p.m2, p.g
+        theta1, theta2, w1, w2 = Z[0], Z[1], Z[2], Z[3]
+
+        # cartesian velocity components:
+        x1_dot = r1*w1*np.cos(theta1)
+        x2_dot = x1_dot + r2*w2*np.cos(theta2)
+        y1_dot = r1*w1*np.sin(theta1)
+        y2_dot = y1_dot + r2*w2*np.sin(theta2)
+
+        # kinetic energy, KE or E_k:
+        self.T = 0.5*m1*(x1_dot**2 + y1_dot**2) + 0.5*m2*(x2_dot**2 + y2_dot**2)
+
+        # potential energy, PE or E_p:
+        y1 = -r1*np.cos(theta1)
+        y2 = y1 - r2*np.cos(theta2)
+        self.V = m1*g*y1 + m2*g*y2
+
+        # total system energy, E or E_T:
+        self.E = self.T + self.V
+        print(f"T.shape={self.T.shape}, V.shape={self.V.shape}, E.shape={self.E.shape}")
+
+    def system_energies(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Public interface to calculate and return the kinetic, potential, and total energy of the double pendulum system."""
+        if self.T is None or self.V is None or self.E is None:
+            self._system_energies()
+        return self.T, self.V, self.E    # return the energies as a tuple
+
     def _wrap_angles(self, angles: Tuple[np.ndarray, np.ndarray], threshold: float = np.pi) -> Tuple[np.ndarray, np.ndarray]:
         """Wrap angles to the range [-π, π] and handle discontinuities (large angle jumps due to full arm link rotations) for better visualisation."""
         # wrap angles to [-π, π] range:
@@ -88,11 +124,10 @@ class DoublePendulum:
     def _plot_graphs(self, fig: plt.Figure, gs: GridSpec) -> Tuple[plt.Axes, ...]:
         """Helper method to populate the time series graphs of θ(t), ω(t), and E(t) into the input figure and GridSpec."""
         self._check_solved()    # check if the system has been solved
+        cf = self.config
         t, Z = self.t, self.Z
-        # unpack parameters and config
-        p, cf = self.params, self.config
-        r1, r2, m1, m2, g = p.r1, p.r2, p.m1, p.m2, p.g
         theta1, theta2, w1, w2 = Z[0], Z[1], Z[2], Z[3]    # state variables
+        
         # wrap angles to handle discontinuities and prepare for plotting:
         theta1_plot, theta2_plot = self._wrap_angles((theta1, theta2))
         if cf.in_degrees:    
@@ -119,24 +154,11 @@ class DoublePendulum:
         ax1.plot(t, w2_plot, color=cf.m2_colour, label=r"$\omega_2$")
 
         # ----- SYSTEM ENERGY, E(t) ----- #
-        # cartesian velocity components
-        x1_dot = r1*w1*np.cos(theta1)
-        x2_dot = x1_dot + r2*w2*np.cos(theta2)
-        y1_dot = r1*w1*np.sin(theta1)
-        y2_dot = y1_dot + r2*w2*np.sin(theta2)
-        # kinetic energy, KE
-        T = 0.5*m1*(x1_dot**2 + y1_dot**2) + 0.5*m2*(x2_dot**2 + y2_dot**2)
-        # potential energy, PE
-        y1 = -r1*np.cos(theta1)
-        y2 = y1 - r2*np.cos(theta2)
-        V = m1*g*y1 + m2*g*y2
-        # total energy
-        E = T + V
         ax2.set_xlabel(r"time, $t$ ($s$)")
         ax2.set_ylabel(r"system energy, $E$ ($J$)")
-        ax2.plot(t, T, color=cf.ke_colour, label=r"$E_k$")
-        ax2.plot(t, V, color=cf.pe_colour, label=r"$E_p$")
-        ax2.plot(t, E, color=cf.te_colour, label=r"$E_T$", linewidth=plt.rcParams["lines.linewidth"] + 0.2)
+        ax2.plot(t, self.T, color=cf.ke_colour, label=r"$E_k$")
+        ax2.plot(t, self.V, color=cf.pe_colour, label=r"$E_p$")
+        ax2.plot(t, self.E, color=cf.te_colour, label=r"$E_T$", linewidth=plt.rcParams["lines.linewidth"] + 0.2)
         # configurations for each subfigure:
         for axis in (ax0, ax1, ax2):
             axis.grid(True, alpha=cf.grid_alpha)
@@ -146,7 +168,7 @@ class DoublePendulum:
                 axis.set_xlim(t[0], t[-1])    
         return ax0, ax1, ax2
 
-    def plot_graphs(self, xlim_timespan: bool = True) -> Tuple[plt.Figure, GridSpec, Tuple[plt.Axes, ...]]:
+    def plot_graphs(self) -> Tuple[plt.Figure, GridSpec, Tuple[plt.Axes, ...]]:
         """Plot θ(t), ω(t), and E(t) for a Double Pendulum (DP) system."""
         fig = plt.figure(figsize=self.config.figure_size)
         gs = GridSpec(nrows=3, ncols=1, figure=fig)
@@ -181,7 +203,7 @@ class DoublePendulum:
         ax.set_xlim(x_extent), ax.set_ylim(y_extent)
         return ax
     
-    def _plot_frames(self, fig: plt.Figure, gs: GridSpec) -> Tuple[plt.Axes]:
+    def _plot_frames(self, fig: plt.Figure, gs: GridSpec) -> plt.Axes:
         """Helper method to populate the static Double Pendulum frames into the input figure and GridSpec."""
         p, cf = self.params, self.config
         t, Z = self.t, self.Z
@@ -287,10 +309,10 @@ class DoublePendulum:
         interval = int(1000 / fps)    # convert FPS to milliseconds
         print(f"{steps:,} frames @ {fps} fps (~{interval * 1e-3:.3f} sec/frame), dpi={dpi}")
         print(f"writing {steps} frames to MP4...\n")
-        # ----- EXTRACT PARAMETERS ----- #
-        r1, r2 = p.r1, p.r2    # lengths of the pendulum links
-        theta1, theta2 = Z[0], Z[1]    # angles in radians
-        x0, y0 = cf.origin    # origin coordinates (main pivot point)
+        # ----- EXTRACT PARAMETERS FOR COORDINATES ----- #
+        r1, r2 = p.r1, p.r2             # lengths of the pendulum links
+        theta1, theta2 = Z[0], Z[1]     # angles in radians
+        x0, y0 = cf.origin              # origin coordinates (main pivot point)
         x1, y1 = x0 + r1*np.sin(theta1), y0 - r1*np.cos(theta1)
         x2, y2 = x1 + r2*np.sin(theta2), y1 - r2*np.cos(theta2)
         # ----- FIGURE SETUP ----- #

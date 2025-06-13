@@ -50,9 +50,9 @@ class DPConfig:
     origin_markersize: int = 12
     draw_n_frames: int = 5    # for the static plot
     # energy plots:
-    ke_colour: str = "tab:blue"
+    ke_colour: str = "tab:cyan"
     pe_colour: str = "tab:purple"
-    te_colour: str = "orange"
+    te_colour: str = "tab:olive"
     # time series plots parameters:
     display_mode: list = field(default_factory=lambda: ["start", "end"])
     show_trail: bool = True
