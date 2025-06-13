@@ -11,11 +11,13 @@ from typing import Tuple, Optional
 from ode_systems import dp_ode
 # configure matplotlib defaults
 plt.rcParams.update({
-    "font.size": 8,
-    "font.family": "monospace",
-    "lines.linewidth": 0.8
+    "font.size": 10,
+    "font.family": "Latin Modern Roman",
+    "mathtext.fontset": "cm",
+    "lines.linewidth": 0.8,
+    "xtick.labelsize": 8,    # smaller ticker markers
+    "ytick.labelsize": 8,
 })
-
 
 class DoublePendulum:
 
@@ -71,7 +73,7 @@ class DoublePendulum:
         diff1, diff2 = np.diff(theta1), np.diff(theta2)
         jumps1 = np.where(np.abs(diff1) > threshold)[0]    # first index to access the array
         jumps2 = np.where(np.abs(diff2) > threshold)[0]
-        print(f"\ndiscontinuities: θ1: {len(jumps1)} angle jump(s), θ2: {len(jumps2)} angle jump(s)")
+        print(f"\nlarge angle jumps: θ1: {len(jumps1)}, θ2: {len(jumps2)}")
         if len(jumps1) == 0 and len(jumps2) == 0:
             return theta1, theta2
         # make copies for modification:
@@ -82,10 +84,9 @@ class DoublePendulum:
         if len(jumps2) > 0:
             theta2_plot[jumps2 + 1] = np.nan    
         return theta1_plot, theta2_plot
-    
-    def plot_dynamics(self, xlim_timespan: bool = True) -> None:
-        """Plot θ(t), ω(t), and E(t) for a Double Pendulum (DP) system."""
-        
+   
+    def _plot_graphs(self, fig: plt.Figure, gs: GridSpec) -> Tuple[plt.Axes, ...]:
+        """Helper method to populate the time series graphs of θ(t), ω(t), and E(t) into the input figure and GridSpec."""
         self._check_solved()    # check if the system has been solved
         t, Z = self.t, self.Z
         # unpack parameters and config
@@ -100,79 +101,20 @@ class DoublePendulum:
             w1_plot, w2_plot = np.degrees(w1), np.degrees(w2)
         
         # ----- FIGURE SETUP ----- #
-        fig, ax = plt.subplots(nrows=3, figsize=cf.figure_size, sharex=True)
-
-        # ----- ANGULAR DISPLACEMENT, θ(t) ----- #
-        ax[0].set_ylabel("angular displacement, " + (r"$\theta$ ($^{\circ}$)" if cf.in_degrees else r"$\theta$ (rad)"))
-        ax[0].plot(t, theta1_plot, color=cf.m1_colour, label=r"$\theta_1$")
-        ax[0].plot(t, theta2_plot, color=cf.m2_colour, label=r"$\theta_2$")
-
-        # ----- ANGULAR VELOCITY, ω(t) ----- #
-        ax[1].set_ylabel("angular velocity, " + (r"$\omega$ ($^{\circ}/s$)" if cf.in_degrees else r"$\omega$ (rad/s)"))
-        ax[1].plot(t, w1_plot, color=cf.m1_colour, label=r"$\omega_1$")
-        ax[1].plot(t, w2_plot, color=cf.m2_colour, label=r"$\omega_2$")
-
-        # ----- SYSTEM ENERGY, E(t) ----- #
-        # cartesian velocity components
-        x1_dot = r1*w1*np.cos(theta1)
-        x2_dot = x1_dot + r2*w2*np.cos(theta2)
-        y1_dot = r1*w1*np.sin(theta1)
-        y2_dot = y1_dot + r2*w2*np.sin(theta2)
-        # kinetic energy, KE
-        T = 0.5*m1*(x1_dot**2 + y1_dot**2) + 0.5*m2*(x2_dot**2 + y2_dot**2)
-        # potential energy, PE
-        y1 = -r1*np.cos(theta1)
-        y2 = y1 - r2*np.cos(theta2)
-        V = m1*g*y1 + m2*g*y2
-        # total energy
-        E = T + V
-        ax[2].set_xlabel(r"time, $t$ ($s$)")
-        ax[2].set_ylabel(r"system energy, $E$ ($J$)")
-        ax[2].plot(t, T, color=cf.ke_colour, label=r"$E_k$")
-        ax[2].plot(t, V, color=cf.pe_colour, label=r"$E_p$")
-        ax[2].plot(t, E, color=cf.te_colour, label=r"$E_T$", linewidth=plt.rcParams["lines.linewidth"] + 0.2)
-
-        # configure for each subfigure:
-        for axis in ax:
-            axis.grid(True, alpha=cf.grid_alpha)
-            axis.yaxis.set_major_locator(MaxNLocator(cf.n_max_ticks))
-            axis.legend(loc="upper right")
-            if xlim_timespan:
-                axis.set_xlim(t[0], t[-1])    
-
-        fig.tight_layout()
-        plt.show()
-
-    def plot_dynamics2(self, xlim_timespan: bool = True) -> Tuple[plt.Figure, plt.GridSpec, Tuple[plt.Axes, plt.Axes, plt.Axes]]:
-        """Plot θ(t), ω(t), and E(t) for a Double Pendulum (DP) system."""
-        
-        self._check_solved()    # check if the system has been solved
-        t, Z = self.t, self.Z
-        # unpack parameters and config
-        p, cf = self.params, self.config
-        r1, r2, m1, m2, g = p.r1, p.r2, p.m1, p.m2, p.g
-        theta1, theta2, w1, w2 = Z[0], Z[1], Z[2], Z[3]    # state variables
-        # wrap angles to handle discontinuities and prepare for plotting:
-        theta1_plot, theta2_plot = self._wrap_angles((theta1, theta2))
-        if cf.in_degrees:    
-            # don't modify the original arrays, as they will be used for energy calculations (in radians)
-            theta1_plot, theta2_plot = np.degrees(theta1_plot), np.degrees(theta2_plot)   
-            w1_plot, w2_plot = np.degrees(w1), np.degrees(w2)
-        
-        # ----- FIGURE SETUP ----- #
-        fig = plt.figure(figsize=cf.figure_size)
-        gs = GridSpec(nrows=3, ncols=1)
         ax0 = fig.add_subplot(gs[0, 0])                 # angular displacement
         ax1 = fig.add_subplot(gs[1, 0], sharex=ax0)     # angular velocity
         ax2 = fig.add_subplot(gs[2, 0], sharex=ax0)     # system energy
+        # remove ticks for the first two subplots:
+        ax0.tick_params(labelbottom=False)    
+        ax1.tick_params(labelbottom=False) 
 
         # ----- ANGULAR DISPLACEMENT, θ(t) ----- #
-        ax0.set_ylabel("angular displacement, " + (r"$\theta$ ($^{\circ}$)" if cf.in_degrees else r"$\theta$ (rad)"))
+        ax0.set_ylabel(r"angular displacement, " + (r"$\theta$ ($^{\circ}$)" if cf.in_degrees else r"$\theta$ ($\text{rad}$)"))
         ax0.plot(t, theta1_plot, color=cf.m1_colour, label=r"$\theta_1$")
         ax0.plot(t, theta2_plot, color=cf.m2_colour, label=r"$\theta_2$")
 
         # ----- ANGULAR VELOCITY, ω(t) ----- #
-        ax1.set_ylabel("angular velocity, " + (r"$\omega$ ($^{\circ}/s$)" if cf.in_degrees else r"$\omega$ (rad/s)"))
+        ax1.set_ylabel(r"angular velocity, " + (r"$\omega$ ($^{\circ}/s$)" if cf.in_degrees else r"$\omega$ ($\text{rad}$/s"))
         ax1.plot(t, w1_plot, color=cf.m1_colour, label=r"$\omega_1$")
         ax1.plot(t, w2_plot, color=cf.m2_colour, label=r"$\omega_2$")
 
@@ -195,57 +137,52 @@ class DoublePendulum:
         ax2.plot(t, T, color=cf.ke_colour, label=r"$E_k$")
         ax2.plot(t, V, color=cf.pe_colour, label=r"$E_p$")
         ax2.plot(t, E, color=cf.te_colour, label=r"$E_T$", linewidth=plt.rcParams["lines.linewidth"] + 0.2)
-
-        # configure for each subfigure:
+        # configurations for each subfigure:
         for axis in (ax0, ax1, ax2):
             axis.grid(True, alpha=cf.grid_alpha)
             axis.yaxis.set_major_locator(MaxNLocator(cf.n_max_ticks))
             axis.legend(loc="upper right")
-            if xlim_timespan:
+            if cf.xlim_timespan:
                 axis.set_xlim(t[0], t[-1])    
+        return ax0, ax1, ax2
 
+    def plot_graphs(self, xlim_timespan: bool = True) -> Tuple[plt.Figure, GridSpec, Tuple[plt.Axes, ...]]:
+        """Plot θ(t), ω(t), and E(t) for a Double Pendulum (DP) system."""
+        fig = plt.figure(figsize=self.config.figure_size)
+        gs = GridSpec(nrows=3, ncols=1, figure=fig)
+        ax0, ax1, ax2 = self._plot_graphs(fig, gs)    # call helper method to populate axes
         fig.tight_layout()
         plt.show()
-
         return fig, gs, (ax0, ax1, ax2)
 
-    def _setup_dp_figure(self) -> Tuple[plt.Figure, plt.Axes]:
-        """Returns the base figure and axes used for the Double Pendulum plot and animation."""
+    def _setup_figure(self, fig: plt.Figure, gs: GridSpec) -> plt.Axes:
+        """Helper function to populate the base figure and axes used for the Double Pendulum plot and animation."""
         cf = self.config
-        # setup main figure and axes
-        fig = plt.figure(figsize=cf.figure_size)
-        gs = GridSpec(nrows=1, ncols=1) 
         ax = fig.add_subplot(gs[0, 0])
-        ax.set_aspect("equal")
         ax.set_xlabel(r"$x$ ($m$)")
-        ax.set_ylabel(r"$y$ ($m$)")
+        ax.set_ylabel(r"$y$ ($m$)", labelpad=-16)
         ax.xaxis.set_major_locator(MaxNLocator(cf.n_max_ticks))
         ax.yaxis.set_major_locator(MaxNLocator(cf.n_max_ticks))
-        # grids and dashed lines
         ax.grid(True, alpha=cf.grid_alpha)
+        
+        # dashed cross lines:
         hline = ax.axhline(0, linestyle="--", color="black", alpha=cf.dashed_line_alpha, linewidth=cf.dashed_line_width)
         vline = ax.axvline(0, linestyle="--", color="black", alpha=cf.dashed_line_alpha, linewidth=cf.dashed_line_width)
         hline.set_dashes([10, 10]), vline.set_dashes([10, 10])
+        
         # origin pivot point marker
         x0, y0 = cf.origin      # origin coordinates (pivot point)
         ax.scatter(x0, y0, marker="o", color=cf.origin_colour, s=cf.origin_markersize, zorder=1)  # origin pivot
-        # set axis limits
-        # independent overrides (if only one set of limits is provided):
-        L = self.params.r1 + self.params.r2     # maximum oustretched length of the pendulum links
-        axis_extent = cf.max_axis_extent * L    # same on all sides
+        # set axis limits and aspect ratio:
+        L = self.params.r1 + self.params.r2         # maximum oustretched length of the pendulum links
+        axis_extent = cf.max_axis_extent * L        # same on all sides
         x_extent = cf.x_axis_limits if cf.x_axis_limits is not None else (-axis_extent, axis_extent)
         y_extent = cf.y_axis_limits if cf.y_axis_limits is not None else (-axis_extent, axis_extent)
         ax.set_xlim(x_extent), ax.set_ylim(y_extent)
-        return fig, gs, ax
-
-    def plot_frames(
-        self,
-        display_mode: list[str] = ["start", "end"],
-        show_trail: bool = True,
-        trail_length_pct: float = 100,
-        num_frames: int = 5
-    ) -> None:
-        """Plot STATIC Double Pendulum frames using the configured parameters."""
+        return ax
+    
+    def _plot_frames(self, fig: plt.Figure, gs: GridSpec) -> Tuple[plt.Axes]:
+        """Helper method to populate the static Double Pendulum frames into the input figure and GridSpec."""
         p, cf = self.params, self.config
         t, Z = self.t, self.Z
         r1, r2, theta1, theta2 = p.r1, p.r2, Z[0], Z[1]
@@ -253,9 +190,8 @@ class DoublePendulum:
         x0, y0 = cf.origin
         x1, y1 = x0 + r1*np.sin(theta1), y0 - r1*np.cos(theta1)
         x2, y2 = x1 + r2*np.sin(theta2), y1 - r2*np.cos(theta2)
-        # setup base figure and axes
-        fig, gs, ax = self._setup_dp_figure()
-        trail_length = int((trail_length_pct / 100) * len(t)) if trail_length_pct > 0 else 0
+        ax = self._setup_figure(fig, gs)    # call helper method to setup the base figure and axes
+        trail_length = int((cf.view_trail_length_pct / 100) * len(t)) if cf.view_trail_length_pct > 0 else 0
         def draw(ax: plt.Axes, i: int, show_trail: bool = False, alpha: float = 1.0) -> None:
             """Draws the double pendulum at step index `i` with adjustable transparency."""
             i = len(t) - 1 if i == -1 else i
@@ -265,25 +201,50 @@ class DoublePendulum:
             # plot masses (bobs):
             ax.scatter(x1[i], y1[i], marker="o", color=cf.m1_colour, s=cf.m1_markersize, edgecolors="none", alpha=alpha, zorder=3)               
             ax.scatter(x2[i], y2[i], marker="o", color=cf.m2_colour, s=cf.m2_markersize, edgecolors="none", alpha=alpha, zorder=4)
-            if show_trail:
+            if cf.show_trail:
                 i0 = max(0, i - trail_length)
                 ax.plot(x1[i0:i + 1], y1[i0:i + 1], color=cf.m1_colour, linewidth=cf.trail_linewidth, alpha=cf.trail_alpha, zorder=0)
                 ax.plot(x2[i0:i + 1], y2[i0:i + 1], color=cf.m2_colour, linewidth=cf.trail_linewidth, alpha=cf.trail_alpha, zorder=0)
         # draw first frame with low opacity:
-        if "start" in display_mode: draw(ax, i=0, alpha=0.4)
+        if "start" in cf.display_mode: draw(ax, i=0, alpha=0.4)
         # draw last frame (default: with full trail):
-        if "end" in display_mode: draw(ax, i=-1, show_trail=show_trail)  
+        if "end" in cf.display_mode: draw(ax, i=-1, show_trail=cf.show_trail)  
         # draw all frames with increasing opacity:
-        if "fade" in display_mode:
-            step = max(1, len(t) // num_frames)   # equally spaced frames (to draw)
+        if "fade" in cf.display_mode:
+            step = max(1, len(t) // cf.num_frames)   # equally spaced frames (to draw)
             indices = list(range(0, len(t), step))
             n = len(indices)
             for idx, i in enumerate(indices):
                 # opacity fades from 0.1 to 1.0 linearly across frames
                 alpha = 0.1 + 0.9 * (idx / (n - 1)) if n > 1 else 1.0
-                show_trail_this_frame = (i == indices[-1]) and show_trail    # bool: only show trail on the last frame
+                show_trail_this_frame = (i == indices[-1]) and cf.show_trail    # bool: only show trail on the last frame
                 draw(ax, i=i, alpha=alpha, show_trail=show_trail_this_frame)
+        return ax
+
+    def plot_frames(self) -> Tuple[plt.Figure, plt.GridSpec, plt.Axes]:
+        """Plot STATIC Double Pendulum frames using the configured parameters."""
+        fig = plt.figure(figsize=self.config.figure_size)
+        gs = GridSpec(nrows=1, ncols=1, figure=fig)
+        ax = self._plot_frames(fig, gs)
+        ax.set_aspect("equal")
+        fig.tight_layout()
         plt.show()
+        return fig, gs, ax
+
+    def dashboard(self, figure_size: Tuple[int, int] = (18, 9), figure_suptitle: str = None) -> plt.Figure:
+        """Displays both the graph plots and static DP frames in a single figure using subfigures."""
+        fig = plt.figure(figsize=figure_size, constrained_layout=True)
+        if figure_suptitle:
+            fig.suptitle(figure_suptitle)
+        outer = GridSpec(nrows=1, ncols=2, wspace=0.08, figure=fig)
+        gs1 = outer[0].subgridspec(nrows=3, ncols=1)
+        gs2 = outer[1].subgridspec(nrows=1, ncols=1)
+        # build each plot from existing methods:
+        self._plot_graphs(fig, gs1)    # plot θ(t), ω(t), and E(t)
+        ax2 = self._plot_frames(fig, gs2)    # plot static frames
+        ax2.set_aspect("equal", adjustable="datalim")    # data limits (xlim and ylim) will be changed to achieve the aspect ratio
+        plt.show()
+        return fig
 
     def _get_filename(self, dpi: int) -> str:
         """Generate a filename for the animation based on the parameters."""
@@ -333,7 +294,7 @@ class DoublePendulum:
         x1, y1 = x0 + r1*np.sin(theta1), y0 - r1*np.cos(theta1)
         x2, y2 = x1 + r2*np.sin(theta2), y1 - r2*np.cos(theta2)
         # ----- FIGURE SETUP ----- #
-        fig, gs, ax = self._setup_dp_figure()
+        fig, gs, ax = self._setup_figure()
         # plot elements to be updated:
         link1, = ax.plot([], [], color=cf.link1_colour, linewidth=cf.link_linewidth, zorder=1)
         link2, = ax.plot([], [], color=cf.link2_colour, linewidth=cf.link_linewidth, zorder=2)
@@ -405,13 +366,22 @@ def dp1() -> None:
             rtol=1e-9,              # relative tolerance for the ODE solver
         ),
         config=DPConfig(
-            figure_size=(10, 10),       # size of the figure
-            x_axis_limits=(-0.9, 0.9),  # x-axis limits
-            y_axis_limits=(-0.9, 0.4),  # y-axis limits
-            trail_length_pct=4,         # length of the trail as a percentage of the total steps
-            video_duration=10.0,        # duration of MP4 video in seconds
+            x_axis_limits=(-0.9, 0.9),      # x-axis limits
+            y_axis_limits=(-0.9, 0.4),      # y-axis limits
+            trail_length_pct=4,             # length of the trail as a percentage of the total steps
+            video_duration=10.0,            # duration of MP4 video in seconds
+            # static plot configurations:
+            display_mode=["start", "end"],  
+            num_frames=5,               
+            show_trail=True,            
+            view_trail_length_pct=100,      # view trail length in the static plot only
         )
     )
-    dp.plot_dynamics()    # Plot θ(t), ω(t), and E(t)
+
+    dp.plot_graphs()    # Plot θ(t), ω(t), and E(t)
+
     dp.plot_frames()
-    dp.animate(dpi=200)
+
+    dp.dashboard()
+
+    # dp.animate(dpi=200)

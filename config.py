@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Tuple, Optional
 
 
@@ -25,7 +25,7 @@ class DPSystemParams:
 class DPConfig:
     """Configuration for plotting the Double Pendulum within a figure."""
     # figure properties:
-    figure_size: Tuple[int, int] = (10, 10)
+    figure_size: Tuple[int, int] = (8, 8)
     figure_title: str = "Double Pendulum Simulation"
     grid_alpha: float = 0.2
     dashed_line_alpha: float = 0.15
@@ -35,7 +35,8 @@ class DPConfig:
     x_axis_limits: Optional[Tuple[float, float]] = None
     y_axis_limits: Optional[Tuple[float, float]] = None
     max_axis_extent: float = 1.2
-    in_degrees: bool = True     # angles in degrees or radians
+    in_degrees: bool = True         # angles in degrees or radians
+    xlim_timespan: bool = True      # whether to limit x-axis to the time span (for the graphs plot)
     # markers, colours, and linestyles:
     m1_colour: str = "tab:green"
     m2_colour: str = "tab:red"
@@ -52,7 +53,12 @@ class DPConfig:
     ke_colour: str = "tab:blue"
     pe_colour: str = "tab:purple"
     te_colour: str = "orange"
-    # animation
+    # time series plots parameters:
+    display_mode: list = field(default_factory=lambda: ["start", "end"])
+    show_trail: bool = True
+    num_frames: int = 5
+    view_trail_length_pct: float = 100     # view on the static plot only
+    # animation parameters:
     trail_length_pct: float = 5
     trail_linewidth: float = 0.75
     trail_alpha: float = 0.75
