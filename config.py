@@ -23,13 +23,17 @@ class DPSystemParams:
 
 @dataclass
 class DPConfig:
-    """Configuration for plotting the Double Pendulum within a figure."""
+    """All configuration parameters for the Double Pendulum."""
     # figure properties:
     figure_size: Tuple[int, int] = (8, 8)
-    figure_title: str = "Double Pendulum Simulation"
+    figure_title: str = None
+    dashboard_figure_size: Tuple[int, int] = (19, 6)
+    dashboard_figure_title: str = None
     grid_alpha: float = 0.2
     dashed_line_alpha: float = 0.15
     dashed_line_width: float = 0.8
+    display_legend: bool = True
+    legend_location: str = "upper right"
     # axis configuration:
     n_max_ticks: int = 3
     x_axis_limits: Optional[Tuple[float, float]] = None
@@ -59,6 +63,8 @@ class DPConfig:
     num_frames: int = 5
     view_trail_length_pct: float = 100     # view on the static plot only
     # animation parameters:
+    fps: int = 60
+    bitrate: int = 50_000
     trail_length_pct: float = 5
     trail_linewidth: float = 0.75
     trail_alpha: float = 0.75

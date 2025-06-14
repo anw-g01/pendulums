@@ -19,9 +19,14 @@ plt.rcParams.update({
     "ytick.labelsize": 8,
 })
 
-class DoublePendulum:
+class DP:
+    """Class to visualise and simulate a Double Pendulum (DP) system."""
 
-    def __init__(self, params: Optional[DPSystemParams] = None, config: Optional[DPConfig] = None) -> None:
+    def __init__(
+        self,
+        params: Optional[DPSystemParams] = None, 
+        config: Optional[DPConfig] = None
+    ) -> None:
         self.params = params if params else DPSystemParams()
         self.config = config if config else DPConfig()
         self.t = None       # time vector
@@ -38,8 +43,12 @@ class DoublePendulum:
         self.E = None       # total energy array
         # automatically solve the system upon initialisation and populate all attributes:
         self._solve()       
-        self.steps = len(self.t)    # number of time steps in the simulation
-    
+        self.steps = len(self.t)    # number of time steps
+        # attributes for animation writing - see _animation_params():
+        self.used_steps = None      # number of frames to write to MP4
+        self.trail_length = None    # trail length of masses in frames
+        self.interval = None        # seconds per frame (1000/fps milliseconds)
+
     def _solve(self) -> None:
         """Private method to solve the ODE system for the double pendulum."""
         # get the ODE system function f(t, Z):
@@ -72,7 +81,7 @@ class DoublePendulum:
         self.w1, self.w2 = Z[2], Z[3]            # angular velocities in radians/sec
 
         # calculate coordinates of the double pendulum masses (bobs):
-        self._coordinates()    # calculate coordinates of the bobs (masses)
+        self._coordinates() 
 
         # calculate energies after solving the system:
         self._system_energies()    
@@ -169,7 +178,8 @@ class DoublePendulum:
         for axis in (ax0, ax1, ax2):
             axis.grid(True, alpha=cf.grid_alpha)
             axis.yaxis.set_major_locator(MaxNLocator(cf.n_max_ticks))
-            axis.legend(loc="upper right")
+            if cf.display_legend:
+                axis.legend(loc=cf.legend_location)
             if cf.xlim_timespan:
                 axis.set_xlim(self.t[0], self.t[-1])
         return ax0, ax1, ax2
@@ -256,11 +266,12 @@ class DoublePendulum:
         plt.show()
         return fig, gs, ax
 
-    def dashboard(self, figure_size: Tuple[int, int] = (18, 9), figure_suptitle: str = None) -> plt.Figure:
+    def plot_dashboard(self) -> plt.Figure:
         """Displays both the graph plots and static DP frames in a single figure using subfigures."""
-        fig = plt.figure(figsize=figure_size, constrained_layout=True)
-        if figure_suptitle:
-            fig.suptitle(figure_suptitle)
+        cf = self.config
+        fig = plt.figure(figsize=cf.dashboard_figure_size, constrained_layout=True)
+        if cf.dashboard_figure_title:
+            fig.suptitle(cf.dashboard_figure_title)
         outer = GridSpec(nrows=1, ncols=2, wspace=0.08, figure=fig)
         gs1 = outer[0].subgridspec(nrows=3, ncols=1)
         gs2 = outer[1].subgridspec(nrows=1, ncols=1)
@@ -285,32 +296,60 @@ class DoublePendulum:
             f"{r1=:.1f}_{r2=:.1f}"
             ".mp4"
         )
-        
-    def animate(
-        self,
-        show_plot_first: bool = True,
-        fps: int = 60,
-        bitrate: int = 50_000,
-        dpi: int = 200
-    ) -> None:
-        """Animate the double pendulum using matplotlib's FuncAnimation."""   
+    
+    def _animation_params(self, title: str, dpi: int) -> None:
+        """Set animation parameters as attributes based on the configuration."""
         cf = self.config
-        x0, y0 = cf.origin              # origin coordinates (main pivot point)
+
+        # calculate key parameters for the animation:
+        self.used_steps = int(cf.fps * cf.video_duration)    # number of steps for the animation
+        self.trail_length = int((cf.trail_length_pct / 100) * self.used_steps)    # trail length in frames
+        self.interval = int(1000 / cf.fps)              # seconds per frame (converted to milliseconds)
+        
+        # check if the number of steps is sufficient for the video duration:
+        if self.used_steps > self.steps:
+            raise ValueError(f"{self.used_steps:,} frames required for a {cf.video_duration:.1f} sec video at {cf.fps} FPS, but only {self.steps:,.0f} frames ({self.steps / cf.fps:.1f} sec) available. Increase `steps` or reduce `video_duration`.")
+        
+        # print animation parameters and stats:
+        print(f"\n{title}")
+        print(f"NOTE: using {self.used_steps}/{len(self.t)} time steps => {cf.video_duration:.1f} sec video duration")
+        print(f"{self.used_steps:,} frames @ {cf.fps} fps (~{self.interval * 1e-3:.3f} sec/frame), dpi={dpi}")
+        print(f"writing {self.used_steps} frames to MP4...\n")
+
+    def _write_to_mp4(self, ani: FuncAnimation, pbar: tqdmFA, dpi: int) -> None:
+        """Write the animation to an MP4 file using the configured parameters."""
+        cf = self.config
+        
+        # start animation:
+        writer = FFMpegWriter(fps=cf.fps, bitrate=cf.bitrate)
+        file_name = self._get_filename(dpi)    # generate filename for the animation
+        ani.save(filename=file_name, writer=writer, dpi=dpi)
+        pbar.close()    # close progress bar
+        print(f"\nanimation saved as '{file_name}'")
+
+        # quick report:
+        elapsed = int(pbar.format_dict["elapsed"])
+        time = datetime.timedelta(seconds=elapsed)
+        print(f"\ntotal elapsed time: {time}")
+        avg_iter_per_sec = self.used_steps / time.total_seconds()
+        if 1 / avg_iter_per_sec < 1:
+            avg_rate = f"{1 / avg_iter_per_sec * 1e3:.0f} ms/frame"
+        else:
+            avg_rate = f"{1 / avg_iter_per_sec:.2f} sec/frame"
+        print(f"{avg_iter_per_sec:.1f} frames/sec processed ({avg_rate})")
+
+    def animate(self, show_plot_first: bool = True, dpi: int = 200) -> None:
+        """Animate the double pendulum using matplotlib's FuncAnimation."""
+        cf = self.config
+        x0, y0 = cf.origin    # origin coordinates (main pivot point)
         if show_plot_first:
             print(f"\nshowing first and last frames of animation...")
             print(f"<CLOSE FIGURE WINDOW TO START WRITING TO MP4>")
             # show the first and last frames, and trail length:
             self.plot_frames()
-        # video duration calculations:
-        used_steps = int(fps * cf.video_duration)    # required frames for the video duration
-        trail_length = int((cf.trail_length_pct / 100) * used_steps)
-        if used_steps > len(self.t):
-            raise ValueError(f"{used_steps:,} frames required for a {cf.video_duration:.1f} sec video at {fps} FPS, but only {len(self.t):,.0f} frames ({len(self.t) / fps:.1f} sec) available. Increase `steps` or reduce `video_duration`.")
-        print(f"\n# ----- DOUBLE PENDULUM (DP) ANIMATION ----- #")
-        print(f"NOTE: using {used_steps}/{len(self.t)} time steps => {cf.video_duration:.1f} sec video duration")
-        interval = int(1000 / fps)    # convert FPS to milliseconds
-        print(f"{used_steps:,} frames @ {fps} fps (~{interval * 1e-3:.3f} sec/frame), dpi={dpi}")
-        print(f"writing {used_steps} frames to MP4...\n")
+
+        # set animation parameters and print key stats:
+        self._animation_params("# ---------- DP ANIMATION ---------- #", dpi)    
         
         # ----- FIGURE SETUP ----- #
         fig = plt.figure(figsize=cf.figure_size)
@@ -319,24 +358,25 @@ class DoublePendulum:
         ax.set_aspect("equal")    # set equal aspect ratio for the axes
 
         # plot elements to be updated:
-        link1, = ax.plot([], [], color=cf.link1_colour, linewidth=cf.link_linewidth, zorder=1)
-        link2, = ax.plot([], [], color=cf.link2_colour, linewidth=cf.link_linewidth, zorder=2)
-        mass1 = ax.scatter([], [], marker="o", color=cf.m1_colour, s=cf.m1_markersize, zorder=3)
-        mass2 = ax.scatter([], [], marker="o", color=cf.m2_colour, s=cf.m2_markersize, zorder=3)
+        link1,          = ax.plot([], [], color=cf.link1_colour, linewidth=cf.link_linewidth, zorder=1)
+        link2,          = ax.plot([], [], color=cf.link2_colour, linewidth=cf.link_linewidth, zorder=2)
+        mass1           = ax.scatter([], [], marker="o", color=cf.m1_colour, s=cf.m1_markersize, zorder=3)
+        mass2           = ax.scatter([], [], marker="o", color=cf.m2_colour, s=cf.m2_markersize, zorder=3)
         if cf.trail_length_pct > 0:    # show trails for masses
-            m1_trail, = ax.plot([], [], color=cf.m1_colour, linewidth=cf.trail_linewidth, alpha=cf.trail_alpha, zorder=4)
-            m2_trail, = ax.plot([], [], color=cf.m2_colour, linewidth=cf.trail_linewidth, alpha=cf.trail_alpha, zorder=4)
+            m1_trail,   = ax.plot([], [], color=cf.m1_colour, linewidth=cf.trail_linewidth, alpha=cf.trail_alpha, zorder=4)
+            m2_trail,   = ax.plot([], [], color=cf.m2_colour, linewidth=cf.trail_linewidth, alpha=cf.trail_alpha, zorder=4)
 
-        # ----- ANIMATION FUNCTION SETUP ----- #
-        
+        # ----- ANIMATION FUNCTIONS ----- #
         def init() -> tuple:
-            link1.set_data([], []), link2.set_data([], [])
-            mass1.set_offsets([self.x1[0], self.y1[0]]), mass2.set_offsets([self.x2[0], self.y2[0]])
+            link1.set_data([], [])
+            link2.set_data([], [])
+            mass1.set_offsets([self.x1[0], self.y1[0]])
+            mass2.set_offsets([self.x2[0], self.y2[0]])
             artists = [link1, link2, mass1, mass2]    # list of artists to initialise
             if cf.trail_length_pct > 0:
                 m1_trail.set_data([], []), m2_trail.set_data([], [])
                 artists.extend([m1_trail, m2_trail])
-            return artists
+            return tuple(artists)
         
         def update(frame: int) -> tuple:
             # update link and mass positions:
@@ -347,39 +387,22 @@ class DoublePendulum:
             artists = [link1, link2, mass1, mass2]    # list of artists to be updated
             # update trails:
             if cf.trail_length_pct > 0:
-                i0 = max(0, frame - trail_length)    # start index for the trail
+                i0 = max(0, frame - self.trail_length)    # start index for the trail
                 m1_trail.set_data(self.x1[i0: frame + 1], self.y1[i0: frame + 1])
                 m2_trail.set_data(self.x2[i0: frame + 1], self.y2[i0: frame + 1])
                 artists.extend([m1_trail, m2_trail])
             pbar.update(1)    # update progress bar
-            return artists
-        
-        pbar = tqdmFA(total=used_steps, fps=fps)    # initialise custom tqdm progress bar
-        ani = FuncAnimation(fig, update, frames=range(used_steps), init_func=init, blit=True)
-        writer = FFMpegWriter(fps=fps, bitrate=bitrate)
-        file_name = self._get_filename(dpi=dpi)    # generate filename for the animation
-        ani.save(filename=file_name, writer=writer, dpi=dpi)
-        pbar.close()    # close progress bar
-        print(f"\nanimation saved as '{file_name}'")
+            return tuple(artists)
 
-        # --- REPORT --- #
-
-        elapsed = int(pbar.format_dict["elapsed"])
-        time = datetime.timedelta(seconds=elapsed)
-        print(f"\ntotal elapsed time: {time}")
-
-        avg_iter_per_sec = used_steps / time.total_seconds()
-        if 1 / avg_iter_per_sec < 1:
-            avg_rate = f"{1 / avg_iter_per_sec * 1e3:.0f} ms/frame"
-        else:
-            avg_rate = f"{1 / avg_iter_per_sec:.2f} sec/frame"
-        print(f"{avg_iter_per_sec:.1f} frames/sec processed ({avg_rate})")
-        return None
+        # ----- START ANIMATION ----- #
+        pbar = tqdmFA(total=self.used_steps, fps=cf.fps)    # initialise custom tqdm progress bar
+        ani = FuncAnimation(fig, update, frames=range(self.used_steps), init_func=init, blit=True)
+        self._write_to_mp4(ani, pbar, dpi)
 
 
 def dp1() -> None:
     """Example usage of the DoublePendulum class to plot dynamics."""
-    dp = DoublePendulum(
+    dp = DP(
         params=DPSystemParams(
             theta1_0=75,  
             theta2_0=165,  
@@ -407,4 +430,4 @@ def dp1() -> None:
 
     # dp.dashboard()
 
-    dp.animate(dpi=200)
+    dp.animate(dpi=100)
