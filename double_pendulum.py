@@ -14,10 +14,11 @@ plt.rcParams.update({
     "font.size": 10,
     "font.family": "Latin Modern Roman",
     "mathtext.fontset": "cm",
-    "lines.linewidth": 0.8,
+    "lines.linewidth": 1,
     "xtick.labelsize": 8,    # smaller ticker markers
     "ytick.labelsize": 8,
 })
+
 
 class DP:
     """Class to visualise and simulate a Double Pendulum (DP) system."""
@@ -29,6 +30,7 @@ class DP:
     ) -> None:
         self.params = params if params else DPSystemParams()
         self.config = config if config else DPConfig()
+        self.file_prefix = "dp_sim_"    # prefix for the output files
         self.t = None       # time vector
         self.theta1 = None  # angle array of the first mass (bob) in radians
         self.theta2 = None  # angle array of the second mass (bob) in radians
@@ -118,16 +120,18 @@ class DP:
         self.E = self.T + self.V
         print(f"T.shape={self.T.shape}, V.shape={self.V.shape}, E.shape={self.E.shape}")
 
-    def _wrap_angles(self, angles: Tuple[np.ndarray, np.ndarray], threshold: float = np.pi) -> Tuple[np.ndarray, np.ndarray]:
+    def _wrap_angles(self, angles: Tuple[np.ndarray, np.ndarray], verbose: bool = False) -> Tuple[np.ndarray, np.ndarray]:
         """Wrap angles to the range [-π, π] and handle discontinuities (large angle jumps due to full arm link rotations) for better visualisation."""
         # wrap angles to [-π, π] range:
         theta1 = np.mod(angles[0] + np.pi, 2*np.pi) - np.pi    # to wrap [0, 2π] use np.mod(θ, 2*np.pi)
         theta2 = np.mod(angles[1] + np.pi, 2*np.pi) - np.pi
         # find indices just before any angle jumps (only likely for the second angle):
         diff1, diff2 = np.diff(theta1), np.diff(theta2)
+        threshold = np.pi
         jumps1 = np.where(np.abs(diff1) > threshold)[0]    # first index to access the array
         jumps2 = np.where(np.abs(diff2) > threshold)[0]
-        print(f"\nlarge angle jumps: θ1: {len(jumps1)}, θ2: {len(jumps2)}")
+        if verbose:
+            print(f"\nlarge angle jumps: θ1: {len(jumps1)}, θ2: {len(jumps2)}")
         if len(jumps1) == 0 and len(jumps2) == 0:
             return theta1, theta2
         # make copies for modification:
@@ -139,14 +143,19 @@ class DP:
             theta2_plot[jumps2 + 1] = np.nan    
         return theta1_plot, theta2_plot
    
+    def get_y_extent(self, arr1: np.ndarray, arr2: np.ndarray) -> Tuple[float, float]:
+        """Calculate y-axis limits of timeseries plots based on the maximum absolute values of two arrays."""
+        y_min = np.nanmin(np.concatenate((arr1, arr2))) * 1.1
+        y_max = np.nanmax(np.concatenate((arr1, arr2))) * 1.1
+        return (y_min, y_max)
+    
     def _plot_graphs(self, fig: plt.Figure, gs: GridSpec) -> Tuple[plt.Axes, ...]:
         """Helper method to populate the time series graphs of θ(t), ω(t), and E(t) into the input figure and GridSpec."""
         cf = self.config
 
         # wrap angles to handle discontinuities and prepare for plotting:
-        theta1_plot, theta2_plot = self._wrap_angles((self.theta1, self.theta2))
+        theta1_plot, theta2_plot = self._wrap_angles((self.theta1, self.theta2), verbose=True)
         if cf.in_degrees:    
-            # don't modify the original arrays, as they will be used for energy calculations (in radians)
             theta1_plot, theta2_plot = np.degrees(theta1_plot), np.degrees(theta2_plot)   
             w1_plot, w2_plot = np.degrees(self.w1), np.degrees(self.w2)
 
@@ -162,26 +171,33 @@ class DP:
         ax0.set_ylabel(r"angular displacement, " + (r"$\theta$ ($^{\circ}$)" if cf.in_degrees else r"$\theta$ ($\text{rad}$)"))
         ax0.plot(self.t, theta1_plot, color=cf.m1_colour, label=r"$\theta_1$")
         ax0.plot(self.t, theta2_plot, color=cf.m2_colour, label=r"$\theta_2$")
+        ax0.set_ylim(self.get_y_extent(theta1_plot, theta2_plot))    # set y-axis limits based on the maximum absolute values
 
         # ----- ANGULAR VELOCITY, ω(t) ----- #
         ax1.set_ylabel(r"angular velocity, " + (r"$\omega$ ($^{\circ}/s$)" if cf.in_degrees else r"$\omega$ ($\text{rad}$/s"))
         ax1.plot(self.t, w1_plot, color=cf.m1_colour, label=r"$\omega_1$")
         ax1.plot(self.t, w2_plot, color=cf.m2_colour, label=r"$\omega_2$")
-
+        ax1.set_ylim(self.get_y_extent(w1_plot, w2_plot))    # set y-axis limits based on the maximum absolute values
+        
         # ----- SYSTEM ENERGY, E(t) ----- #
         ax2.set_xlabel(r"time, $t$ ($s$)")
         ax2.set_ylabel(r"system energy, $E$ ($J$)")
         ax2.plot(self.t, self.T, color=cf.ke_colour, label=r"$E_k$")
         ax2.plot(self.t, self.V, color=cf.pe_colour, label=r"$E_p$")
-        ax2.plot(self.t, self.E, color=cf.te_colour, label=r"$E_T$", linewidth=plt.rcParams["lines.linewidth"] + 0.2)
+        ax2.plot(self.t, self.E, color=cf.te_colour, label=r"$E_T$", linewidth=plt.rcParams["lines.linewidth"] + 0.5)
+        ax2.set_ylim(self.get_y_extent(self.T, self.V))    # set y-axis limits based on the maximum absolute value of E
+
         # configurations for each subfigure:
         for axis in (ax0, ax1, ax2):
             axis.grid(True, alpha=cf.grid_alpha)
+            hline = axis.axhline(0, linestyle="--", color="black", alpha=cf.dashed_line_alpha, linewidth=cf.dashed_line_width, zorder=0)
+            hline.set_dashes([10, 10])    # dashed horizontal line at y=0
             axis.yaxis.set_major_locator(MaxNLocator(cf.n_max_ticks))
             if cf.display_legend:
                 axis.legend(loc=cf.legend_location)
             if cf.xlim_timespan:
                 axis.set_xlim(self.t[0], self.t[-1])
+
         return ax0, ax1, ax2
 
     def plot_graphs(self) -> Tuple[plt.Figure, GridSpec, Tuple[plt.Axes, ...]]:
@@ -221,9 +237,7 @@ class DP:
     
     def _plot_frames(self, fig: plt.Figure, gs: GridSpec) -> plt.Axes:
         """Helper method to populate the static Double Pendulum frames into the input figure and GridSpec."""
-        p, cf = self.params, self.config
-        r1, r2 = p.r1, p.r2
-        # array of coordinates of masses (bobs):
+        cf = self.config
         x0, y0 = cf.origin
         ax = self._setup_figure(fig, gs)    # call helper method to setup the base figure and axes
         trail_length = int((cf.view_trail_length_pct / 100) * self.steps) if cf.view_trail_length_pct > 0 else 0
@@ -287,7 +301,8 @@ class DP:
         p, cf = self.params, self.config
         m1, m2, r1, r2 = p.m1, p.m2, p.r1, p.r2
         return (
-            f"dp_sim_dpi={dpi}_"
+            f"{self.file_prefix}_"
+            f"dpi={dpi}_"
             f"θ1={p.theta1_0:.0f}_θ2={p.theta2_0:.0f}_"
             f"steps={self.steps:,}(T={p.T_secs:.0f})_"
             f"@{cf.trail_length_pct}%trail_"
@@ -357,7 +372,7 @@ class DP:
         ax = self._setup_figure(fig, gs)    # call helper method to setup the base figure and axes
         ax.set_aspect("equal")    # set equal aspect ratio for the axes
 
-        # plot elements to be updated:
+        # ------ INITIALISE PLOT ELEMENTS ----- #
         link1,          = ax.plot([], [], color=cf.link1_colour, linewidth=cf.link_linewidth, zorder=1)
         link2,          = ax.plot([], [], color=cf.link2_colour, linewidth=cf.link_linewidth, zorder=2)
         mass1           = ax.scatter([], [], marker="o", color=cf.m1_colour, s=cf.m1_markersize, zorder=3)
@@ -367,6 +382,7 @@ class DP:
             m2_trail,   = ax.plot([], [], color=cf.m2_colour, linewidth=cf.trail_linewidth, alpha=cf.trail_alpha, zorder=4)
 
         # ----- ANIMATION FUNCTIONS ----- #
+
         def init() -> tuple:
             link1.set_data([], [])
             link2.set_data([], [])
@@ -397,7 +413,137 @@ class DP:
         # ----- START ANIMATION ----- #
         pbar = tqdmFA(total=self.used_steps, fps=cf.fps)    # initialise custom tqdm progress bar
         ani = FuncAnimation(fig, update, frames=range(self.used_steps), init_func=init, blit=True)
+        self.file_prefix = "dp_sim_"
         self._write_to_mp4(ani, pbar, dpi)
+
+    def animate_dashboard(
+        self,
+        dpi: int = 200,
+    ) -> None:
+        """Animate the double pendulum alongside the time series graphs as a full dashboard layout animation."""
+
+        print(f"\nshowing first and last frames of animation...")
+        print(f"<CLOSE FIGURE WINDOW TO START WRITING TO MP4>")
+        fig_dash = self.plot_dashboard()    # show the first and last frames, and trail length
+
+        cf = self.config
+        x0, y0 = cf.origin    # origin coordinates (main pivot point)
+        theta1_plot, theta2_plot = self._wrap_angles((self.theta1, self.theta2))    # wrap angles to handle discontinuities
+        if cf.in_degrees:    
+            theta1_plot, theta2_plot = np.degrees(theta1_plot), np.degrees(theta2_plot)   
+            w1_plot, w2_plot = np.degrees(self.w1), np.degrees(self.w2)
+
+        # set animation parameters and print key stats:
+        self._animation_params("# ---------- DP DASHBOARD ANIMATION ---------- #", dpi)
+
+        # ------ FIGURE SETUP ----- #
+        fig = plt.figure(figsize=cf.dashboard_figure_size, constrained_layout=True)
+        if cf.dashboard_figure_title:
+            fig.suptitle(cf.dashboard_figure_title)
+        outer = GridSpec(nrows=1, ncols=2, wspace=0.08, figure=fig)
+        gs1 = outer[0].subgridspec(nrows=3, ncols=1)    # time series graphs
+        gs2 = outer[1].subgridspec(nrows=1, ncols=1)    # double pendulum 
+
+        # ------ LEFT SIDE - time series graphs ----- #
+        ax0 = fig.add_subplot(gs1[0, 0])                # θ(t)
+        ax1 = fig.add_subplot(gs1[1, 0], sharex=ax0)    # ω(t)
+        ax2 = fig.add_subplot(gs1[2, 0], sharex=ax0)    # E(t)
+        ax0.tick_params(labelbottom=False)              # remove x-ticks 
+        ax1.tick_params(labelbottom=False)    
+        # Labels and grid
+        ax2.set_xlabel(r"time, $t$ ($s$)")
+        ax0.set_ylabel(r"angular displacement, " + (r"$\theta$ ($^{\circ}$)" if cf.in_degrees else r"$\theta$ ($\text{rad}$)"))
+        ax1.set_ylabel(r"angular velocity, " + (r"$\omega$ ($^{\circ}/s$)" if cf.in_degrees else r"$\omega$ ($\text{rad}$/s"))
+        ax2.set_ylabel(r"system energy, $E$ ($J$)")
+
+        # ------ RIGHT SIDE - double pendulum ----- #
+        ax3 = self._setup_figure(fig, gs2)              # call helper method to setup the base figure and axes for the DP
+
+        # ------ INITIALISE PLOT ELEMENTS ----- #
+        theta1_line,    = ax0.plot([], [], color=cf.m1_colour, label=r"$\theta_1$")
+        theta2_line,    = ax0.plot([], [], color=cf.m2_colour, label=r"$\theta_2$")
+        w1_line,        = ax1.plot([], [], color=cf.m1_colour, label=r"$\omega_1$")
+        w2_line,        = ax1.plot([], [], color=cf.m2_colour, label=r"$\omega_2$")
+        T_line,         = ax2.plot([], [], color=cf.ke_colour, label=r"$E_k$")
+        V_line,         = ax2.plot([], [], color=cf.pe_colour, label=r"$E_p$")
+        E_line,         = ax2.plot([], [], color=cf.te_colour, label=r"$E_T$", linewidth=plt.rcParams["lines.linewidth"] + 0.5)
+        link1,          = ax3.plot([], [], color=cf.link1_colour, linewidth=cf.link_linewidth, zorder=1)
+        link2,          = ax3.plot([], [], color=cf.link2_colour, linewidth=cf.link_linewidth, zorder=2)
+        mass1           = ax3.scatter([], [], marker="o", color=cf.m1_colour, s=cf.m1_markersize, zorder=3)
+        mass2           = ax3.scatter([], [], marker="o", color=cf.m2_colour, s=cf.m2_markersize, zorder=3)
+        # plot trails for the pendulum masses:
+        if cf.trail_length_pct > 0:    
+            m1_trail,   = ax3.plot([], [], color=cf.m1_colour, linewidth=cf.trail_linewidth, alpha=cf.trail_alpha, zorder=4)
+            m2_trail,   = ax3.plot([], [], color=cf.m2_colour, linewidth=cf.trail_linewidth, alpha=cf.trail_alpha, zorder=4)
+        
+        # configure time series graphs:
+        for axis in (ax0, ax1, ax2):
+            axis.grid(True, alpha=cf.grid_alpha)
+            axis.yaxis.set_major_locator(MaxNLocator(cf.n_max_ticks))
+            if cf.display_legend:
+                axis.legend(loc=cf.legend_location)
+            if cf.xlim_timespan:
+                axis.set_xlim(self.t[0], self.t[self.used_steps - 1])    # set x-axis limits to the time span
+        # set y-axis limits for the time series graphs:
+        ax0.set_ylim(self.get_y_extent(theta1_plot, theta2_plot))   # set y-axis limits based on the min/max values
+        ax1.set_ylim(self.get_y_extent(w1_plot, w2_plot))           
+        ax2.set_ylim(self.get_y_extent(self.T, self.V))          
+        # set axis limits and aspect ratio for DP plot:
+        ax_dp = fig_dash.get_axes()[-1]
+        xlim, ylim = ax_dp.get_xlim(), ax_dp.get_ylim() # get x and y limits from the static DP plot
+        print(xlim, ylim)
+        ax3.set_xlim(xlim), ax3.set_ylim(ylim)          
+        ax3.set_aspect("equal", adjustable="datalim") # set equal aspect ratio for the axes   
+
+        # ----- ANIMATION FUNCTIONS ----- #
+
+        def init() -> tuple:
+            theta1_line.set_data([], [])
+            theta2_line.set_data([], [])
+            w1_line.set_data([], [])
+            w2_line.set_data([], [])
+            T_line.set_data([], [])
+            V_line.set_data([], [])
+            E_line.set_data([], [])
+            link1.set_data([], [])
+            link2.set_data([], [])
+            mass1.set_offsets([self.x1[0], self.y1[0]])
+            mass2.set_offsets([self.x2[0], self.y2[0]])
+            artists = [theta1_line, theta2_line, w1_line, w2_line, T_line, V_line, E_line, link1, link2, mass1, mass2]
+            if cf.trail_length_pct > 0:    # show trails for masses
+                m1_trail.set_data([], [])
+                m2_trail.set_data([], [])
+                artists.extend([m1_trail, m2_trail])
+            return tuple(artists)
+        
+        def update(frame: int) -> tuple:
+            # update time series data for the current frame:
+            theta1_line.set_data(self.t[:frame], theta1_plot[:frame])
+            theta2_line.set_data(self.t[:frame], theta2_plot[:frame])
+            w1_line.set_data(self.t[:frame], w1_plot[:frame])
+            w2_line.set_data(self.t[:frame], w2_plot[:frame])
+            T_line.set_data(self.t[:frame], self.T[:frame])
+            V_line.set_data(self.t[:frame], self.V[:frame])
+            E_line.set_data(self.t[:frame], self.E[:frame])
+            # update double pendulum link and mass positions:
+            link1.set_data([x0, self.x1[frame]], [y0, self.y1[frame]])
+            link2.set_data([self.x1[frame], self.x2[frame]], [self.y1[frame], self.y2[frame]])
+            mass1.set_offsets([self.x1[frame], self.y1[frame]])
+            mass2.set_offsets([self.x2[frame], self.y2[frame]])
+            artists = [theta1_line, theta2_line, w1_line, w2_line, T_line, V_line, E_line, link1, link2, mass1, mass2]
+            if cf.trail_length_pct > 0:
+                i0 = max(0, frame - self.trail_length)    # start index for the trail
+                m1_trail.set_data(self.x1[i0: frame], self.y1[i0: frame])
+                m2_trail.set_data(self.x2[i0: frame], self.y2[i0: frame])
+                artists.extend([m1_trail, m2_trail])
+            pbar.update(1)
+            return tuple(artists)
+        
+        # ----- START ANIMATION ----- #
+        pbar = tqdmFA(total=self.used_steps, fps=cf.fps)    # initialise custom tqdm progress bar
+        ani = FuncAnimation(fig, update, frames=range(self.used_steps), init_func=init, blit=True)
+        self.file_prefix = "dp_dash_"
+        self._write_to_mp4(ani, pbar, dpi)    # write the animation to MP4 file
 
 
 def dp1() -> None:
@@ -428,6 +574,8 @@ def dp1() -> None:
 
     # dp.plot_frames()
 
-    # dp.dashboard()
+    # dp.plot_dashboard()
 
-    dp.animate(dpi=100)
+    # dp.animate(dpi=200)
+
+    dp.animate_dashboard(dpi=250) 

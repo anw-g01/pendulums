@@ -27,7 +27,7 @@ class DPConfig:
     # figure properties:
     figure_size: Tuple[int, int] = (8, 8)
     figure_title: str = None
-    dashboard_figure_size: Tuple[int, int] = (19, 6)
+    dashboard_figure_size: Tuple[int, int] = (16, 9)
     dashboard_figure_title: str = None
     grid_alpha: float = 0.2
     dashed_line_alpha: float = 0.15
